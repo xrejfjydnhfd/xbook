@@ -4,15 +4,47 @@ import Layout from "@/components/Layout";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Heart, MessageCircle, Share2, Bookmark, UserPlus } from "lucide-react";
+import { Heart, MessageCircle, Share2, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import CommentsDialog from "@/components/CommentsDialog";
+import ShareDialog from "@/components/ShareDialog";
 
 const Videos = () => {
   const [videos, setVideos] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [videoLikes, setVideoLikes] = useState<Record<string, { liked: boolean; count: number }>>({});
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (currentUserId && videos.length > 0) {
+      fetchLikesForVideos();
+    }
+  }, [currentUserId, videos]);
+
+  const fetchLikesForVideos = async () => {
+    const likesData: Record<string, { liked: boolean; count: number }> = {};
+    
+    for (const video of videos) {
+      const { data: likes } = await supabase
+        .from("likes")
+        .select("user_id")
+        .eq("post_id", video.id);
+
+      if (likes) {
+        likesData[video.id] = {
+          liked: likes.some((like: any) => like.user_id === currentUserId),
+          count: likes.length,
+        };
+      }
+    }
+    
+    setVideoLikes(likesData);
+  };
 
   useEffect(() => {
     fetchCurrentUser();
@@ -75,6 +107,45 @@ const Videos = () => {
     }
   };
 
+  const handleLike = async (videoId: string, postOwnerId: string) => {
+    const currentLikeState = videoLikes[videoId];
+    
+    try {
+      if (currentLikeState?.liked) {
+        await supabase
+          .from("likes")
+          .delete()
+          .eq("post_id", videoId)
+          .eq("user_id", currentUserId);
+        
+        setVideoLikes(prev => ({
+          ...prev,
+          [videoId]: { liked: false, count: (prev[videoId]?.count || 1) - 1 }
+        }));
+      } else {
+        await supabase
+          .from("likes")
+          .insert({ post_id: videoId, user_id: currentUserId });
+        
+        if (postOwnerId !== currentUserId) {
+          await supabase.from("notifications").insert({
+            user_id: postOwnerId,
+            from_user_id: currentUserId,
+            type: "like",
+            post_id: videoId,
+          });
+        }
+        
+        setVideoLikes(prev => ({
+          ...prev,
+          [videoId]: { liked: true, count: (prev[videoId]?.count || 0) + 1 }
+        }));
+      }
+    } catch (error) {
+      console.error("Error liking video:", error);
+    }
+  };
+
   return (
     <Layout>
       <div className="max-w-2xl mx-auto p-4">
@@ -125,25 +196,56 @@ const Videos = () => {
                 )}
               </CardContent>
               <CardFooter className="flex justify-around pt-3">
-                <Button variant="ghost" size="sm">
-                  <Heart className="w-5 h-5 mr-1" />
-                  Like
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={videoLikes[video.id]?.liked ? "text-red-500" : ""}
+                  onClick={() => handleLike(video.id, video.profiles.id)}
+                >
+                  <Heart className={`w-5 h-5 mr-1 ${videoLikes[video.id]?.liked ? "fill-current" : ""}`} />
+                  {videoLikes[video.id]?.count || 0}
                 </Button>
-                <Button variant="ghost" size="sm">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedVideo(video.id);
+                    setCommentsOpen(true);
+                  }}
+                >
                   <MessageCircle className="w-5 h-5 mr-1" />
                   Comment
                 </Button>
-                <Button variant="ghost" size="sm">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedVideo(video.id);
+                    setShareOpen(true);
+                  }}
+                >
                   <Share2 className="w-5 h-5 mr-1" />
                   Share
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Bookmark className="w-5 h-5 mr-1" />
-                  Save
                 </Button>
               </CardFooter>
             </Card>
           ))
+        )}
+
+        {selectedVideo && (
+          <>
+            <CommentsDialog
+              open={commentsOpen}
+              onOpenChange={setCommentsOpen}
+              postId={selectedVideo}
+              currentUserId={currentUserId}
+            />
+            <ShareDialog
+              open={shareOpen}
+              onOpenChange={setShareOpen}
+              postId={selectedVideo}
+            />
+          </>
         )}
       </div>
     </Layout>
