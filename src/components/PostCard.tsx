@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,8 @@ import { Heart, MessageCircle, Share2, MoreVertical } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import CommentsDialog from "./CommentsDialog";
+import ShareDialog from "./ShareDialog";
 
 interface PostCardProps {
   post: {
@@ -27,8 +29,40 @@ interface PostCardProps {
 const PostCard = ({ post, currentUserId }: PostCardProps) => {
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [commentsCount, setCommentsCount] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchLikeStatus();
+    fetchCommentsCount();
+  }, [post.id, currentUserId]);
+
+  const fetchLikeStatus = async () => {
+    const { data: likes } = await supabase
+      .from("likes")
+      .select("id")
+      .eq("post_id", post.id);
+
+    if (likes) {
+      setLikesCount(likes.length);
+      const userLike = likes.find((like: any) => like.user_id === currentUserId);
+      setLiked(!!userLike);
+    }
+  };
+
+  const fetchCommentsCount = async () => {
+    const { count } = await supabase
+      .from("comments")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", post.id);
+
+    if (count !== null) {
+      setCommentsCount(count);
+    }
+  };
 
   const handleLike = async () => {
     try {
@@ -62,10 +96,7 @@ const PostCard = ({ post, currentUserId }: PostCardProps) => {
   };
 
   const handleShare = () => {
-    toast({
-      title: "Share",
-      description: "Share functionality coming soon!",
-    });
+    setShareOpen(true);
   };
 
   return (
@@ -120,15 +151,27 @@ const PostCard = ({ post, currentUserId }: PostCardProps) => {
           <Heart className={`w-5 h-5 mr-1 ${liked ? "fill-current" : ""}`} />
           {likesCount}
         </Button>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" onClick={() => setCommentsOpen(true)}>
           <MessageCircle className="w-5 h-5 mr-1" />
-          Comment
+          {commentsCount}
         </Button>
         <Button variant="ghost" size="sm" onClick={handleShare}>
           <Share2 className="w-5 h-5 mr-1" />
           Share
         </Button>
       </CardFooter>
+
+      <CommentsDialog
+        open={commentsOpen}
+        onOpenChange={setCommentsOpen}
+        postId={post.id}
+        currentUserId={currentUserId}
+      />
+      <ShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        postId={post.id}
+      />
     </Card>
   );
 };

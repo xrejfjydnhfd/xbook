@@ -99,7 +99,11 @@ const Profile = () => {
               </div>
               {isOwnProfile ? (
                 <div className="flex gap-2">
-                  <Button variant="outline" size="icon">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => navigate("/settings")}
+                  >
                     <Settings className="w-4 h-4" />
                   </Button>
                   <Button variant="outline" size="icon" onClick={handleLogout}>
