@@ -4,8 +4,9 @@ import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserPlus, MessageCircle, MoreVertical, Check, X } from "lucide-react";
+import { UserPlus, MessageCircle, MoreVertical, Check, X, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 
@@ -14,6 +15,7 @@ const Friends = () => {
   const [friends, setFriends] = useState<any[]>([]);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -150,12 +152,32 @@ const Friends = () => {
     }
   };
 
+  const filteredUsers = allUsers.filter(user =>
+    user.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredFriends = friends.filter(friendship =>
+    friendship.friend.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    friendship.friend.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto p-4">
+      <div className="max-w-2xl mx-auto p-4 pb-20">
         <h1 className="text-3xl font-bold mb-6 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
           Friends
         </h1>
+        
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <Input
+            placeholder="Search people..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
 
         <Tabs defaultValue="suggestions" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
@@ -165,7 +187,7 @@ const Friends = () => {
           </TabsList>
 
           <TabsContent value="suggestions" className="space-y-4">
-            {allUsers.map((user) => (
+            {filteredUsers.map((user) => (
               <Card key={user.id}>
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center space-x-3">
@@ -191,8 +213,8 @@ const Friends = () => {
             ))}
           </TabsContent>
 
-          <TabsContent value="friends" className="space-y-4">
-            {friends.map((friendship) => (
+            <TabsContent value="friends" className="space-y-4">
+              {filteredFriends.map((friendship) => (
               <Card key={friendship.id}>
                 <CardContent className="flex items-center justify-between p-4">
                   <div 

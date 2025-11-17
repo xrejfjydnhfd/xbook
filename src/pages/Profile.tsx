@@ -5,7 +5,7 @@ import Layout from "@/components/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, Settings, LogOut } from "lucide-react";
+import { MessageCircle, Settings, LogOut, Plus, Image as ImageIcon, Video } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import PostCard from "@/components/PostCard";
 
@@ -14,8 +14,10 @@ const Profile = () => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
+  const [stories, setStories] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -28,6 +30,7 @@ const Profile = () => {
       setIsOwnProfile(!userId || userId === currentUserId);
       fetchProfile(profileId);
       fetchUserPosts(profileId);
+      fetchStories(profileId);
     }
   }, [currentUserId, userId]);
 
@@ -68,6 +71,58 @@ const Profile = () => {
     if (data) {
       setPosts(data);
     }
+  };
+
+  const fetchStories = async (profileId: string) => {
+    const { data } = await supabase
+      .from("stories")
+      .select("*")
+      .eq("user_id", profileId)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false });
+
+    if (data) {
+      setStories(data);
+    }
+  };
+
+  const handleStoryUpload = async (type: "image" | "video") => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = type === "image" ? "image/*" : "video/*";
+    input.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      setLoading(true);
+      try {
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from("media")
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("media")
+          .getPublicUrl(fileName);
+
+        await supabase.from("stories").insert({
+          user_id: currentUserId,
+          media_url: publicUrl,
+          media_type: type,
+        });
+
+        toast({ title: "Story posted!" });
+        fetchStories(currentUserId);
+      } catch (error) {
+        toast({ title: "Error posting story", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    input.click();
   };
 
   const handleLogout = async () => {
@@ -138,6 +193,55 @@ const Profile = () => {
             </div>
           </CardContent>
         </Card>
+
+        {isOwnProfile && (
+          <Card className="mt-6 mb-6">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Plus className="w-5 h-5" />
+                <h3 className="font-semibold">Add to Story</h3>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => handleStoryUpload("image")}
+                  disabled={loading}
+                >
+                  <ImageIcon className="w-4 h-4 mr-2" />
+                  Photo
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleStoryUpload("video")}
+                  disabled={loading}
+                >
+                  <Video className="w-4 h-4 mr-2" />
+                  Video
+                </Button>
+              </div>
+              {stories.length > 0 && (
+                <div className="mt-4 flex gap-2 overflow-x-auto">
+                  {stories.map((story) => (
+                    <div key={story.id} className="relative">
+                      {story.media_type === "image" ? (
+                        <img
+                          src={story.media_url}
+                          alt="Story"
+                          className="w-20 h-20 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <video
+                          src={story.media_url}
+                          className="w-20 h-20 rounded-lg object-cover"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <h2 className="text-xl font-bold mb-4">Posts</h2>
         {posts.length === 0 ? (

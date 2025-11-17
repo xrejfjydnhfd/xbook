@@ -97,6 +97,7 @@ const CreatePost = ({ userId, onPostCreated }: CreatePostProps) => {
     <Card className="mb-4">
       <CardContent className="pt-6 space-y-4">
         <Textarea
+          id="create-post-content"
           placeholder="What's on your mind?"
           value={content}
           onChange={(e) => setContent(e.target.value)}
