@@ -12,6 +12,8 @@ import Profile from "./pages/Profile";
 import Chat from "./pages/Chat";
 import Messages from "./pages/Messages";
 import Settings from "./pages/Settings";
+import AdminLogin from "./pages/AdminLogin";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +35,8 @@ const App = () => (
           <Route path="/messages" element={<Messages />} />
           <Route path="/chat/:userId" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/addmin" element={<AdminLogin />} />
+          <Route path="/addmin/dashboard" element={<AdminDashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
