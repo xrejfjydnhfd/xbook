@@ -1,82 +1,64 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { Shield } from "lucide-react";
 
-const AdminLogin = () => {
+interface AdminLoginProps {
+  onLoginSuccess: () => void;
+}
+
+export const AdminLogin = ({ onLoginSuccess }: AdminLoginProps) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
   const { toast } = useToast();
-
-  useEffect(() => {
-    checkAdminAccess();
-  }, []);
-
-  const checkAdminAccess = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-
-      if (roles) {
-        navigate("/addmin/dashboard");
-      }
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (authError) throw authError;
+      if (error) throw error;
 
-      if (authData.user) {
-        const { data: roles, error: roleError } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", authData.user.id)
-          .eq("role", "admin")
-          .maybeSingle();
+      if (data.user) {
+        // Check admin role
+        const { data: hasAdminRole, error: roleError } = await supabase.rpc("has_role", {
+          _user_id: data.user.id,
+          _role: "admin"
+        });
 
         if (roleError) throw roleError;
 
-        if (!roles) {
+        if (!hasAdminRole) {
           await supabase.auth.signOut();
           toast({
             title: "Access Denied",
-            description: "You do not have admin privileges",
+            description: "You don't have admin privileges",
             variant: "destructive",
           });
+          setLoading(false);
           return;
         }
 
         toast({
-          title: "Success",
-          description: "Admin login successful",
+          title: "Welcome Admin",
+          description: "Successfully logged in",
         });
-        navigate("/addmin/dashboard");
+        onLoginSuccess();
       }
     } catch (error: any) {
       toast({
-        title: "Error",
-        description: error.message || "Failed to login",
+        title: "Login Failed",
+        description: error.message || "Invalid credentials",
         variant: "destructive",
       });
     } finally {
@@ -85,18 +67,16 @@ const AdminLogin = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted to-background p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/20 to-background p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
+        <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-primary/10 rounded-full">
-              <Shield className="w-8 h-8 text-primary" />
+            <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
+              <Shield className="w-8 h-8 text-primary-foreground" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Admin Panel</CardTitle>
-          <CardDescription>
-            Enter your credentials to access the admin dashboard
-          </CardDescription>
+          <CardTitle className="text-2xl">Admin Panel</CardTitle>
+          <CardDescription>Sign in to access admin dashboard</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -131,5 +111,3 @@ const AdminLogin = () => {
     </div>
   );
 };
-
-export default AdminLogin;
