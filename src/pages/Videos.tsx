@@ -1,9 +1,8 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, UserPlus, ChevronUp, ChevronDown } from "lucide-react";
+import { Heart, MessageCircle, Share2, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import CommentsDialog from "@/components/CommentsDialog";
@@ -12,12 +11,14 @@ import ShareDialog from "@/components/ShareDialog";
 const Videos = () => {
   const [videos, setVideos] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [videoLikes, setVideoLikes] = useState<Record<string, { liked: boolean; count: number }>>({});
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [touchStart, setTouchStart] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<Record<string, HTMLVideoElement>>({});
+  const observerRef = useRef<IntersectionObserver | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -52,11 +53,32 @@ const Videos = () => {
     fetchVideos();
   }, []);
 
+  // Setup Intersection Observer for auto-play/pause
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.play();
-    }
-  }, [currentVideoIndex]);
+    if (videos.length === 0) return;
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const video = entry.target as HTMLVideoElement;
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.75) {
+            video.play().catch(() => {});
+          } else {
+            video.pause();
+          }
+        });
+      },
+      { threshold: [0.75] }
+    );
+
+    Object.values(videoRefs.current).forEach((video) => {
+      if (video) observerRef.current?.observe(video);
+    });
+
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, [videos]);
 
   const fetchCurrentUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -153,140 +175,144 @@ const Videos = () => {
     }
   };
 
-  const handlePrevVideo = () => {
-    if (currentVideoIndex > 0) {
-      setCurrentVideoIndex(currentVideoIndex - 1);
-    }
+  // Touch gesture handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.touches[0].clientY);
   };
 
-  const handleNextVideo = () => {
-    if (currentVideoIndex < videos.length - 1) {
-      setCurrentVideoIndex(currentVideoIndex + 1);
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const touchEnd = e.changedTouches[0].clientY;
+    const diff = touchStart - touchEnd;
+
+    if (Math.abs(diff) > 50) {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const scrollAmount = window.innerHeight;
+      if (diff > 0) {
+        container.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+      } else {
+        container.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+      }
     }
-  };
+  }, [touchStart]);
 
   if (videos.length === 0) {
     return (
-      <Layout>
-        <div className="h-screen flex items-center justify-center">
-          <p className="text-muted-foreground">No videos yet</p>
-        </div>
-      </Layout>
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <p className="text-white text-lg">No videos yet</p>
+      </div>
     );
   }
 
-  const currentVideo = videos[currentVideoIndex];
-
   return (
-    <div className="fixed inset-0 bg-black">
-      <video
-        ref={videoRef}
-        src={currentVideo.media_url}
-        className="w-full h-full object-contain"
-        loop
-        playsInline
-        onClick={(e) => {
-          if (e.currentTarget.paused) {
-            e.currentTarget.play();
-          } else {
-            e.currentTarget.pause();
-          }
-        }}
-      />
+    <div 
+      ref={containerRef}
+      className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory bg-black"
+      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <style>{`
+        div::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
 
-      {/* User Info Overlay */}
-      <div className="absolute bottom-20 left-4 right-20 text-white z-10">
+      {videos.map((video) => (
         <div 
-          className="flex items-center gap-3 mb-3 cursor-pointer"
-          onClick={() => navigate(`/profile/${currentVideo.profiles.id}`)}
+          key={video.id}
+          className="relative w-full h-screen snap-start snap-always flex items-center justify-center"
         >
-          <Avatar className="border-2 border-white">
-            <AvatarImage src={currentVideo.profiles.avatar_url || ""} />
-            <AvatarFallback>{currentVideo.profiles.username[0].toUpperCase()}</AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-semibold">{currentVideo.profiles.full_name || currentVideo.profiles.username}</p>
-            <p className="text-sm opacity-80">@{currentVideo.profiles.username}</p>
+          <video
+            ref={(el) => {
+              if (el) videoRefs.current[video.id] = el;
+            }}
+            src={video.media_url}
+            className="w-full h-full object-contain"
+            loop
+            playsInline
+            preload="metadata"
+            onClick={(e) => {
+              if (e.currentTarget.paused) {
+                e.currentTarget.play();
+              } else {
+                e.currentTarget.pause();
+              }
+            }}
+          />
+
+          {/* User Info Overlay */}
+          <div className="absolute bottom-20 left-4 right-20 text-white z-10">
+            <div 
+              className="flex items-center gap-3 mb-3 cursor-pointer"
+              onClick={() => navigate(`/profile/${video.profiles.id}`)}
+            >
+              <Avatar className="border-2 border-white">
+                <AvatarImage src={video.profiles.avatar_url || ""} />
+                <AvatarFallback>{video.profiles.username[0].toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div>
+                <p className="font-semibold">{video.profiles.full_name || video.profiles.username}</p>
+                <p className="text-sm opacity-80">@{video.profiles.username}</p>
+              </div>
+            </div>
+            {video.content && (
+              <p className="text-sm mb-2">{video.content}</p>
+            )}
+          </div>
+
+          {/* Right Side Actions */}
+          <div className="absolute bottom-20 right-4 flex flex-col gap-6 items-center z-10">
+            {video.profiles.id !== currentUserId && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12"
+                onClick={() => handleFollow(video.profiles.id)}
+              >
+                <UserPlus className="w-6 h-6" />
+              </Button>
+            )}
+            
+            <Button
+              size="icon"
+              variant="ghost"
+              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12 flex flex-col"
+              onClick={() => handleLike(video.id, video.profiles.id)}
+            >
+              <Heart 
+                className={`w-7 h-7 ${videoLikes[video.id]?.liked ? "fill-red-500 text-red-500" : ""}`} 
+              />
+              <span className="text-xs mt-1">{videoLikes[video.id]?.count || 0}</span>
+            </Button>
+
+            <Button
+              size="icon"
+              variant="ghost"
+              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12"
+              onClick={() => {
+                setSelectedVideo(video.id);
+                setCommentsOpen(true);
+              }}
+            >
+              <MessageCircle className="w-6 h-6" />
+            </Button>
+
+            <Button
+              size="icon"
+              variant="ghost"
+              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12"
+              onClick={() => {
+                setSelectedVideo(video.id);
+                setShareOpen(true);
+              }}
+            >
+              <Share2 className="w-6 h-6" />
+            </Button>
           </div>
         </div>
-        {currentVideo.content && (
-          <p className="text-sm mb-2">{currentVideo.content}</p>
-        )}
-      </div>
-
-      {/* Right Side Actions */}
-      <div className="absolute bottom-20 right-4 flex flex-col gap-6 items-center z-10">
-        {currentVideo.profiles.id !== currentUserId && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="bg-white/20 hover:bg-white/30 text-white rounded-full w-12 h-12"
-            onClick={() => handleFollow(currentVideo.profiles.id)}
-          >
-            <UserPlus className="w-6 h-6" />
-          </Button>
-        )}
-        
-        <Button
-          size="icon"
-          variant="ghost"
-          className="bg-white/20 hover:bg-white/30 text-white rounded-full w-12 h-12 flex flex-col"
-          onClick={() => handleLike(currentVideo.id, currentVideo.profiles.id)}
-        >
-          <Heart 
-            className={`w-7 h-7 ${videoLikes[currentVideo.id]?.liked ? "fill-red-500 text-red-500" : ""}`} 
-          />
-          <span className="text-xs mt-1">{videoLikes[currentVideo.id]?.count || 0}</span>
-        </Button>
-
-        <Button
-          size="icon"
-          variant="ghost"
-          className="bg-white/20 hover:bg-white/30 text-white rounded-full w-12 h-12"
-          onClick={() => {
-            setSelectedVideo(currentVideo.id);
-            setCommentsOpen(true);
-          }}
-        >
-          <MessageCircle className="w-6 h-6" />
-        </Button>
-
-        <Button
-          size="icon"
-          variant="ghost"
-          className="bg-white/20 hover:bg-white/30 text-white rounded-full w-12 h-12"
-          onClick={() => {
-            setSelectedVideo(currentVideo.id);
-            setShareOpen(true);
-          }}
-        >
-          <Share2 className="w-6 h-6" />
-        </Button>
-      </div>
-
-      {/* Navigation Arrows */}
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-10">
-        {currentVideoIndex > 0 && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="bg-white/20 hover:bg-white/30 text-white rounded-full"
-            onClick={handlePrevVideo}
-          >
-            <ChevronUp className="w-6 h-6" />
-          </Button>
-        )}
-        {currentVideoIndex < videos.length - 1 && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="bg-white/20 hover:bg-white/30 text-white rounded-full"
-            onClick={handleNextVideo}
-          >
-            <ChevronDown className="w-6 h-6" />
-          </Button>
-        )}
-      </div>
+      ))}
 
       {selectedVideo && (
         <>
