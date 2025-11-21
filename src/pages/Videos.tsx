@@ -16,6 +16,8 @@ const Videos = () => {
   const [shareOpen, setShareOpen] = useState(false);
   const [videoLikes, setVideoLikes] = useState<Record<string, { liked: boolean; count: number }>>({});
   const [touchStart, setTouchStart] = useState(0);
+  const [showHeart, setShowHeart] = useState<string | null>(null);
+  const [lastTap, setLastTap] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement>>({});
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -197,6 +199,21 @@ const Videos = () => {
     }
   }, [touchStart]);
 
+  const handleDoubleTap = useCallback((videoId: string, postOwnerId: string) => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    if (now - lastTap < DOUBLE_TAP_DELAY) {
+      // Double tap detected
+      if (!videoLikes[videoId]?.liked) {
+        handleLike(videoId, postOwnerId);
+      }
+      setShowHeart(videoId);
+      setTimeout(() => setShowHeart(null), 1000);
+    }
+    setLastTap(now);
+  }, [lastTap, videoLikes, handleLike]);
+
   if (videos.length === 0) {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
@@ -234,6 +251,7 @@ const Videos = () => {
             playsInline
             preload="metadata"
             onClick={(e) => {
+              handleDoubleTap(video.id, video.profiles.id);
               if (e.currentTarget.paused) {
                 e.currentTarget.play();
               } else {
@@ -241,6 +259,18 @@ const Videos = () => {
               }
             }}
           />
+
+          {/* Double Tap Heart Animation */}
+          {showHeart === video.id && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+              <Heart 
+                className="w-32 h-32 text-white fill-white animate-[scale-in_0.3s_ease-out,fade-out_0.5s_ease-out_0.5s]" 
+                style={{
+                  filter: 'drop-shadow(0 0 10px rgba(0,0,0,0.3))',
+                }}
+              />
+            </div>
+          )}
 
           {/* User Info Overlay */}
           <div className="absolute bottom-20 left-4 right-20 text-white z-10">
