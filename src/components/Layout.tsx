@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
-import BottomNav from "./BottomNav";
-
 interface LayoutProps {
   children: React.ReactNode;
 }
@@ -42,9 +40,8 @@ const Layout = ({ children }: LayoutProps) => {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20">
+    <div className="min-h-screen bg-background">
       {children}
-      <BottomNav />
     </div>
   );
 };
