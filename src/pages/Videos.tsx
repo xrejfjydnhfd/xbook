@@ -2,11 +2,13 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, UserPlus } from "lucide-react";
+import { Heart, MessageCircle, Share2, UserPlus, Bookmark, Volume2, VolumeX, ArrowLeft, BadgeCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import CommentsDialog from "@/components/CommentsDialog";
 import ShareDialog from "@/components/ShareDialog";
+
+const MAX_VIDEO_DURATION = 90; // 1 minute 30 seconds
 
 const Videos = () => {
   const [videos, setVideos] = useState<any[]>([]);
@@ -15,9 +17,13 @@ const Videos = () => {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [videoLikes, setVideoLikes] = useState<Record<string, { liked: boolean; count: number }>>({});
+  const [savedVideos, setSavedVideos] = useState<Set<string>>(new Set());
   const [touchStart, setTouchStart] = useState(0);
   const [showHeart, setShowHeart] = useState<string | null>(null);
   const [lastTap, setLastTap] = useState(0);
+  const [mutedVideos, setMutedVideos] = useState<Set<string>>(new Set());
+  const [expandedCaptions, setExpandedCaptions] = useState<Set<string>>(new Set());
+  const [commentsCount, setCommentsCount] = useState<Record<string, number>>({});
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement>>({});
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -27,6 +33,7 @@ const Videos = () => {
   useEffect(() => {
     if (currentUserId && videos.length > 0) {
       fetchLikesForVideos();
+      fetchCommentsCount();
     }
   }, [currentUserId, videos]);
 
@@ -50,12 +57,23 @@ const Videos = () => {
     setVideoLikes(likesData);
   };
 
+  const fetchCommentsCount = async () => {
+    const counts: Record<string, number> = {};
+    for (const video of videos) {
+      const { count } = await supabase
+        .from("comments")
+        .select("*", { count: "exact", head: true })
+        .eq("post_id", video.id);
+      counts[video.id] = count || 0;
+    }
+    setCommentsCount(counts);
+  };
+
   useEffect(() => {
     fetchCurrentUser();
     fetchVideos();
   }, []);
 
-  // Setup Intersection Observer for auto-play/pause
   useEffect(() => {
     if (videos.length === 0) return;
 
@@ -177,7 +195,36 @@ const Videos = () => {
     }
   };
 
-  // Touch gesture handlers
+  const handleSave = (videoId: string) => {
+    setSavedVideos(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(videoId)) {
+        newSet.delete(videoId);
+        toast({ title: "Removed from saved" });
+      } else {
+        newSet.add(videoId);
+        toast({ title: "Saved!" });
+      }
+      return newSet;
+    });
+  };
+
+  const toggleMute = (videoId: string) => {
+    const video = videoRefs.current[videoId];
+    if (video) {
+      video.muted = !video.muted;
+      setMutedVideos(prev => {
+        const newSet = new Set(prev);
+        if (video.muted) {
+          newSet.add(videoId);
+        } else {
+          newSet.delete(videoId);
+        }
+        return newSet;
+      });
+    }
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientY);
   };
@@ -204,7 +251,6 @@ const Videos = () => {
     const DOUBLE_TAP_DELAY = 300;
 
     if (now - lastTap < DOUBLE_TAP_DELAY) {
-      // Double tap detected
       if (!videoLikes[videoId]?.liked) {
         handleLike(videoId, postOwnerId);
       }
@@ -213,6 +259,21 @@ const Videos = () => {
     }
     setLastTap(now);
   }, [lastTap, videoLikes, handleLike]);
+
+  const handleVideoTimeUpdate = (videoId: string, e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (video.currentTime >= MAX_VIDEO_DURATION) {
+      video.currentTime = 0;
+      video.pause();
+    }
+  };
+
+  const truncateCaption = (text: string | null, videoId: string) => {
+    if (!text) return null;
+    const isExpanded = expandedCaptions.has(videoId);
+    if (isExpanded || text.length <= 80) return text;
+    return text.slice(0, 80) + "...";
+  };
 
   if (videos.length === 0) {
     return (
@@ -236,6 +297,21 @@ const Videos = () => {
         }
       `}</style>
 
+      {/* Back Button */}
+      <Button
+        size="icon"
+        variant="ghost"
+        className="fixed top-4 left-4 z-50 text-white bg-black/30 backdrop-blur-sm rounded-full"
+        onClick={() => navigate("/")}
+      >
+        <ArrowLeft className="w-6 h-6" />
+      </Button>
+
+      {/* Reels Label */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+        <span className="text-white font-bold text-lg">Reels</span>
+      </div>
+
       {videos.map((video) => (
         <div 
           key={video.id}
@@ -246,10 +322,12 @@ const Videos = () => {
               if (el) videoRefs.current[video.id] = el;
             }}
             src={video.media_url}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-cover"
             loop
             playsInline
+            muted={mutedVideos.has(video.id)}
             preload="metadata"
+            onTimeUpdate={(e) => handleVideoTimeUpdate(video.id, e)}
             onClick={(e) => {
               handleDoubleTap(video.id, video.profiles.id);
               if (e.currentTarget.paused) {
@@ -272,74 +350,152 @@ const Videos = () => {
             </div>
           )}
 
-          {/* User Info Overlay */}
-          <div className="absolute bottom-20 left-4 right-20 text-white z-10">
+          {/* Sound Toggle - Top Right */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="absolute top-16 right-4 z-30 bg-black/30 backdrop-blur-sm text-white rounded-full w-10 h-10"
+            onClick={() => toggleMute(video.id)}
+          >
+            {mutedVideos.has(video.id) ? (
+              <VolumeX className="w-5 h-5" />
+            ) : (
+              <Volume2 className="w-5 h-5" />
+            )}
+          </Button>
+
+          {/* User Info Overlay - Bottom Left */}
+          <div className="absolute bottom-24 left-4 right-20 text-white z-10">
             <div 
               className="flex items-center gap-3 mb-3 cursor-pointer"
               onClick={() => navigate(`/profile/${video.profiles.id}`)}
             >
-              <Avatar className="border-2 border-white">
+              <Avatar className="w-10 h-10 border-2 border-white">
                 <AvatarImage src={video.profiles.avatar_url || ""} />
-                <AvatarFallback>{video.profiles.username[0].toUpperCase()}</AvatarFallback>
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  {video.profiles.username[0].toUpperCase()}
+                </AvatarFallback>
               </Avatar>
-              <div>
-                <p className="font-semibold">{video.profiles.full_name || video.profiles.username}</p>
-                <p className="text-sm opacity-80">@{video.profiles.username}</p>
+              <div className="flex items-center gap-2">
+                <span className="font-bold">{video.profiles.username}</span>
+                <BadgeCheck className="w-4 h-4 text-primary fill-primary" />
+                {video.profiles.id !== currentUserId && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-3 border-white text-white bg-transparent hover:bg-white/20 rounded-md"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleFollow(video.profiles.id);
+                    }}
+                  >
+                    Follow
+                  </Button>
+                )}
               </div>
             </div>
             {video.content && (
-              <p className="text-sm mb-2">{video.content}</p>
+              <p 
+                className="text-sm leading-relaxed cursor-pointer"
+                onClick={() => {
+                  setExpandedCaptions(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(video.id)) {
+                      newSet.delete(video.id);
+                    } else {
+                      newSet.add(video.id);
+                    }
+                    return newSet;
+                  });
+                }}
+              >
+                {truncateCaption(video.content, video.id)}
+                {video.content && video.content.length > 80 && !expandedCaptions.has(video.id) && (
+                  <span className="font-semibold ml-1">more</span>
+                )}
+              </p>
             )}
           </div>
 
-          {/* Right Side Actions */}
-          <div className="absolute bottom-20 right-4 flex flex-col gap-6 items-center z-10">
-            {video.profiles.id !== currentUserId && (
+          {/* Right Side Actions - Facebook Reels Style */}
+          <div className="absolute bottom-24 right-3 flex flex-col gap-5 items-center z-10">
+            {/* Like */}
+            <div className="flex flex-col items-center">
               <Button
                 size="icon"
                 variant="ghost"
-                className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12"
-                onClick={() => handleFollow(video.profiles.id)}
+                className="text-white rounded-full w-12 h-12 bg-black/20"
+                onClick={() => handleLike(video.id, video.profiles.id)}
               >
-                <UserPlus className="w-6 h-6" />
+                <Heart 
+                  className={`w-7 h-7 ${videoLikes[video.id]?.liked ? "fill-red-500 text-red-500" : ""}`} 
+                />
               </Button>
-            )}
-            
-            <Button
-              size="icon"
-              variant="ghost"
-              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12 flex flex-col"
-              onClick={() => handleLike(video.id, video.profiles.id)}
+              <span className="text-white text-xs font-semibold mt-1">
+                {videoLikes[video.id]?.count || 0}
+              </span>
+            </div>
+
+            {/* Comment */}
+            <div className="flex flex-col items-center">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-white rounded-full w-12 h-12 bg-black/20"
+                onClick={() => {
+                  setSelectedVideo(video.id);
+                  setCommentsOpen(true);
+                }}
+              >
+                <MessageCircle className="w-7 h-7" />
+              </Button>
+              <span className="text-white text-xs font-semibold mt-1">
+                {commentsCount[video.id] || 0}
+              </span>
+            </div>
+
+            {/* Share */}
+            <div className="flex flex-col items-center">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-white rounded-full w-12 h-12 bg-black/20"
+                onClick={() => {
+                  setSelectedVideo(video.id);
+                  setShareOpen(true);
+                }}
+              >
+                <Share2 className="w-7 h-7" />
+              </Button>
+              <span className="text-white text-xs font-semibold mt-1">Share</span>
+            </div>
+
+            {/* Save */}
+            <div className="flex flex-col items-center">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-white rounded-full w-12 h-12 bg-black/20"
+                onClick={() => handleSave(video.id)}
+              >
+                <Bookmark 
+                  className={`w-7 h-7 ${savedVideos.has(video.id) ? "fill-white" : ""}`} 
+                />
+              </Button>
+              <span className="text-white text-xs font-semibold mt-1">Save</span>
+            </div>
+
+            {/* Profile Avatar */}
+            <div 
+              className="w-10 h-10 rounded-lg overflow-hidden border-2 border-white cursor-pointer mt-2"
+              onClick={() => navigate(`/profile/${video.profiles.id}`)}
             >
-              <Heart 
-                className={`w-7 h-7 ${videoLikes[video.id]?.liked ? "fill-red-500 text-red-500" : ""}`} 
+              <img 
+                src={video.profiles.avatar_url || "/placeholder.svg"} 
+                alt={video.profiles.username}
+                className="w-full h-full object-cover"
               />
-              <span className="text-xs mt-1">{videoLikes[video.id]?.count || 0}</span>
-            </Button>
-
-            <Button
-              size="icon"
-              variant="ghost"
-              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12"
-              onClick={() => {
-                setSelectedVideo(video.id);
-                setCommentsOpen(true);
-              }}
-            >
-              <MessageCircle className="w-6 h-6" />
-            </Button>
-
-            <Button
-              size="icon"
-              variant="ghost"
-              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-full w-12 h-12"
-              onClick={() => {
-                setSelectedVideo(video.id);
-                setShareOpen(true);
-              }}
-            >
-              <Share2 className="w-6 h-6" />
-            </Button>
+            </div>
           </div>
         </div>
       ))}
