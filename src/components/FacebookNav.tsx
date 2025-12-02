@@ -1,4 +1,4 @@
-import { Home, Play, User, Search, MessageCircle } from "lucide-react";
+import { Home, Play, User, Search, MessageCircle, Users, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,9 @@ const FacebookNav = () => {
 
   const navItems = [
     { icon: Home, path: "/", label: "Home" },
+    { icon: Users, path: "/friends", label: "Friends" },
     { icon: Play, path: "/videos", label: "Reels" },
+    { icon: Bell, path: "/notifications", label: "Notifications" },
     { icon: User, path: "/profile", label: "Profile" },
   ];
 
