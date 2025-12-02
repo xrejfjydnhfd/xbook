@@ -12,6 +12,7 @@ import Profile from "./pages/Profile";
 import Chat from "./pages/Chat";
 import Messages from "./pages/Messages";
 import Settings from "./pages/Settings";
+import Search from "./pages/Search";
 import Addmin from "./pages/Addmin";
 import NotFound from "./pages/NotFound";
 
@@ -34,6 +35,7 @@ const App = () => (
           <Route path="/messages" element={<Messages />} />
           <Route path="/chat/:userId" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/addmin" element={<Addmin />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

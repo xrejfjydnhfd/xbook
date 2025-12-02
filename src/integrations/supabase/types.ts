@@ -53,6 +53,80 @@ export type Database = {
           },
         ]
       }
+      event_attendees: {
+        Row: {
+          event_id: string
+          id: string
+          responded_at: string | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          event_id: string
+          id?: string
+          responded_at?: string | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          event_id?: string
+          id?: string
+          responded_at?: string | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_attendees_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      events: {
+        Row: {
+          banner_image: string | null
+          created_at: string | null
+          created_by: string
+          description: string | null
+          event_date: string
+          going_count: number | null
+          id: string
+          interested_count: number | null
+          location: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          banner_image?: string | null
+          created_at?: string | null
+          created_by: string
+          description?: string | null
+          event_date: string
+          going_count?: number | null
+          id?: string
+          interested_count?: number | null
+          location?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          banner_image?: string | null
+          created_at?: string | null
+          created_by?: string
+          description?: string | null
+          event_date?: string
+          going_count?: number | null
+          id?: string
+          interested_count?: number | null
+          location?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       follows: {
         Row: {
           created_at: string | null
@@ -127,6 +201,74 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      group_members: {
+        Row: {
+          group_id: string
+          id: string
+          joined_at: string | null
+          role: string | null
+          user_id: string
+        }
+        Insert: {
+          group_id: string
+          id?: string
+          joined_at?: string | null
+          role?: string | null
+          user_id: string
+        }
+        Update: {
+          group_id?: string
+          id?: string
+          joined_at?: string | null
+          role?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      groups: {
+        Row: {
+          cover_image: string | null
+          created_at: string | null
+          created_by: string
+          description: string | null
+          id: string
+          is_public: boolean | null
+          member_count: number | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          cover_image?: string | null
+          created_at?: string | null
+          created_by: string
+          description?: string | null
+          id?: string
+          is_public?: boolean | null
+          member_count?: number | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          cover_image?: string | null
+          created_at?: string | null
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_public?: boolean | null
+          member_count?: number | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       likes: {
         Row: {
@@ -257,6 +399,77 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      page_followers: {
+        Row: {
+          followed_at: string | null
+          id: string
+          page_id: string
+          user_id: string
+        }
+        Insert: {
+          followed_at?: string | null
+          id?: string
+          page_id: string
+          user_id: string
+        }
+        Update: {
+          followed_at?: string | null
+          id?: string
+          page_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "page_followers_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pages: {
+        Row: {
+          category: string | null
+          cover_image: string | null
+          created_at: string | null
+          created_by: string
+          description: string | null
+          follower_count: number | null
+          id: string
+          is_verified: boolean | null
+          name: string
+          profile_image: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          category?: string | null
+          cover_image?: string | null
+          created_at?: string | null
+          created_by: string
+          description?: string | null
+          follower_count?: number | null
+          id?: string
+          is_verified?: boolean | null
+          name: string
+          profile_image?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string | null
+          cover_image?: string | null
+          created_at?: string | null
+          created_by?: string
+          description?: string | null
+          follower_count?: number | null
+          id?: string
+          is_verified?: boolean | null
+          name?: string
+          profile_image?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       posts: {
         Row: {
