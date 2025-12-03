@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MessageCircle, Settings, LogOut, Plus, Image as ImageIcon, Video } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import PostCard from "@/components/PostCard";
+import ProfileMenu from "@/components/profile/ProfileMenu";
 
 const Profile = () => {
   const { userId } = useParams();
@@ -243,7 +244,11 @@ const Profile = () => {
           </Card>
         )}
 
-        <h2 className="text-xl font-bold mb-4">Posts</h2>
+        {isOwnProfile && (
+          <ProfileMenu currentUserId={currentUserId} />
+        )}
+
+        <h2 className="text-xl font-bold mb-4 mt-6">Posts</h2>
         {posts.length === 0 ? (
           <Card className="p-8 text-center text-muted-foreground">
             <p>No posts yet</p>
