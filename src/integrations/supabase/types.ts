@@ -202,6 +202,55 @@ export type Database = {
           },
         ]
       }
+      group_invitations: {
+        Row: {
+          created_at: string | null
+          group_id: string
+          id: string
+          invited_by: string
+          invited_user_id: string
+          status: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          group_id: string
+          id?: string
+          invited_by: string
+          invited_user_id: string
+          status?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          group_id?: string
+          id?: string
+          invited_by?: string
+          invited_user_id?: string
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_invitations_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_invitations_invited_user_id_fkey"
+            columns: ["invited_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_members: {
         Row: {
           group_id: string
@@ -429,6 +478,52 @@ export type Database = {
           },
         ]
       }
+      page_invitations: {
+        Row: {
+          created_at: string | null
+          id: string
+          invited_by: string
+          invited_user_id: string
+          page_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          invited_by: string
+          invited_user_id: string
+          page_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          invited_by?: string
+          invited_user_id?: string
+          page_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "page_invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "page_invitations_invited_user_id_fkey"
+            columns: ["invited_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "page_invitations_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pages: {
         Row: {
           category: string | null
@@ -536,6 +631,42 @@ export type Database = {
         }
         Relationships: []
       }
+      saved_posts: {
+        Row: {
+          id: string
+          post_id: string
+          saved_at: string | null
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          post_id: string
+          saved_at?: string | null
+          user_id: string
+        }
+        Update: {
+          id?: string
+          post_id?: string
+          saved_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_posts_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saved_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stories: {
         Row: {
           created_at: string | null
@@ -591,6 +722,42 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      watch_history: {
+        Row: {
+          id: string
+          post_id: string
+          user_id: string
+          watched_at: string | null
+        }
+        Insert: {
+          id?: string
+          post_id: string
+          user_id: string
+          watched_at?: string | null
+        }
+        Update: {
+          id?: string
+          post_id?: string
+          user_id?: string
+          watched_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watch_history_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "watch_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
