@@ -97,7 +97,11 @@ const Home = () => {
 
           {/* Create Post */}
           <div className="bg-card p-3 mb-2">
-            <CreatePost userId={currentUserId} onPostCreated={fetchPosts} />
+            <CreatePost 
+              userId={currentUserId} 
+              userProfile={currentUserProfile}
+              onPostCreated={fetchPosts} 
+            />
           </div>
 
           {/* Divider */}
@@ -124,7 +128,12 @@ const Home = () => {
               </div>
             ) : (
               posts.map((post) => (
-                <FacebookPostCard key={post.id} post={post} currentUserId={currentUserId} />
+                <FacebookPostCard 
+                  key={post.id} 
+                  post={post} 
+                  currentUserId={currentUserId}
+                  onPostDeleted={fetchPosts}
+                />
               ))
             )}
           </div>

@@ -319,6 +319,27 @@ export type Database = {
         }
         Relationships: []
       }
+      hashtags: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          usage_count: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          usage_count?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          usage_count?: number | null
+        }
+        Relationships: []
+      }
       likes: {
         Row: {
           created_at: string | null
@@ -566,30 +587,113 @@ export type Database = {
         }
         Relationships: []
       }
+      post_hashtags: {
+        Row: {
+          hashtag_id: string
+          id: string
+          post_id: string
+        }
+        Insert: {
+          hashtag_id: string
+          id?: string
+          post_id: string
+        }
+        Update: {
+          hashtag_id?: string
+          id?: string
+          post_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_hashtags_hashtag_id_fkey"
+            columns: ["hashtag_id"]
+            isOneToOne: false
+            referencedRelation: "hashtags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "post_hashtags_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      post_tags: {
+        Row: {
+          created_at: string | null
+          id: string
+          post_id: string
+          tagged_user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          post_id: string
+          tagged_user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          post_id?: string
+          tagged_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_tags_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       posts: {
         Row: {
           content: string | null
           created_at: string | null
+          feeling: string | null
           id: string
+          is_reel: boolean | null
+          location: string | null
           media_type: string | null
           media_url: string | null
+          privacy: string | null
+          processing_status: string | null
+          thumbnail_url: string | null
           user_id: string
+          video_duration: number | null
         }
         Insert: {
           content?: string | null
           created_at?: string | null
+          feeling?: string | null
           id?: string
+          is_reel?: boolean | null
+          location?: string | null
           media_type?: string | null
           media_url?: string | null
+          privacy?: string | null
+          processing_status?: string | null
+          thumbnail_url?: string | null
           user_id: string
+          video_duration?: number | null
         }
         Update: {
           content?: string | null
           created_at?: string | null
+          feeling?: string | null
           id?: string
+          is_reel?: boolean | null
+          location?: string | null
           media_type?: string | null
           media_url?: string | null
+          privacy?: string | null
+          processing_status?: string | null
+          thumbnail_url?: string | null
           user_id?: string
+          video_duration?: number | null
         }
         Relationships: [
           {
@@ -630,6 +734,38 @@ export type Database = {
           username?: string
         }
         Relationships: []
+      }
+      reactions: {
+        Row: {
+          created_at: string | null
+          id: string
+          post_id: string
+          reaction: Database["public"]["Enums"]["reaction_type"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          post_id: string
+          reaction: Database["public"]["Enums"]["reaction_type"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          post_id?: string
+          reaction?: Database["public"]["Enums"]["reaction_type"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reactions_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       saved_posts: {
         Row: {
@@ -774,6 +910,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
+      reaction_type: "like" | "love" | "care" | "haha" | "wow" | "sad" | "angry"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -902,6 +1039,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
+      reaction_type: ["like", "love", "care", "haha", "wow", "sad", "angry"],
     },
   },
 } as const
