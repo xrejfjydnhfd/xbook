@@ -712,6 +712,10 @@ export type Database = {
           created_at: string | null
           full_name: string | null
           id: string
+          profile_visibility: string | null
+          show_followers: boolean | null
+          show_following: boolean | null
+          show_likes: boolean | null
           updated_at: string | null
           username: string
         }
@@ -721,6 +725,10 @@ export type Database = {
           created_at?: string | null
           full_name?: string | null
           id: string
+          profile_visibility?: string | null
+          show_followers?: boolean | null
+          show_following?: boolean | null
+          show_likes?: boolean | null
           updated_at?: string | null
           username: string
         }
@@ -730,6 +738,10 @@ export type Database = {
           created_at?: string | null
           full_name?: string | null
           id?: string
+          profile_visibility?: string | null
+          show_followers?: boolean | null
+          show_following?: boolean | null
+          show_likes?: boolean | null
           updated_at?: string | null
           username?: string
         }
@@ -900,11 +912,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      are_friends: {
+        Args: { _other_user_id: string; _user_id: string }
+        Returns: boolean
+      }
+      can_view_post: {
+        Args: { _post_id: string; _viewer_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_event_attendee: {
+        Args: { _event_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_group_member: {
+        Args: { _group_id: string; _user_id: string }
         Returns: boolean
       }
     }
