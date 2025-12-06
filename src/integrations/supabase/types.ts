@@ -557,6 +557,7 @@ export type Database = {
           description: string | null
           follower_count: number | null
           id: string
+          is_published: boolean | null
           is_verified: boolean | null
           name: string
           profile_image: string | null
@@ -570,6 +571,7 @@ export type Database = {
           description?: string | null
           follower_count?: number | null
           id?: string
+          is_published?: boolean | null
           is_verified?: boolean | null
           name: string
           profile_image?: string | null
@@ -583,6 +585,7 @@ export type Database = {
           description?: string | null
           follower_count?: number | null
           id?: string
+          is_published?: boolean | null
           is_verified?: boolean | null
           name?: string
           profile_image?: string | null
