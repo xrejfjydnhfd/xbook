@@ -8,8 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Upload } from "lucide-react";
+import { ArrowLeft, Upload, Shield, Eye, EyeOff, Users, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -19,6 +22,12 @@ const Settings = () => {
     username: "",
     full_name: "",
     bio: "",
+  });
+  const [privacySettings, setPrivacySettings] = useState({
+    profile_visibility: "public" as "public" | "friends" | "private",
+    show_followers: false,
+    show_following: false,
+    show_likes: false,
   });
   const { toast } = useToast();
 
@@ -42,6 +51,12 @@ const Settings = () => {
         username: data.username || "",
         full_name: data.full_name || "",
         bio: data.bio || "",
+      });
+      setPrivacySettings({
+        profile_visibility: (data.profile_visibility as "public" | "friends" | "private") || "public",
+        show_followers: data.show_followers || false,
+        show_following: data.show_following || false,
+        show_likes: data.show_likes || false,
       });
     }
   };
@@ -104,6 +119,10 @@ const Settings = () => {
           username: formData.username,
           full_name: formData.full_name,
           bio: formData.bio,
+          profile_visibility: privacySettings.profile_visibility,
+          show_followers: privacySettings.show_followers,
+          show_following: privacySettings.show_following,
+          show_likes: privacySettings.show_likes,
         })
         .eq("id", user.id);
 
@@ -208,6 +227,100 @@ const Settings = () => {
                   rows={4}
                   placeholder="Tell us about yourself..."
                 />
+              </div>
+
+              <Separator className="my-6" />
+
+              {/* Privacy Settings Section */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-semibold">Privacy Settings</h3>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="profile_visibility">Profile Visibility</Label>
+                  <Select
+                    value={privacySettings.profile_visibility}
+                    onValueChange={(value: "public" | "friends" | "private") =>
+                      setPrivacySettings({ ...privacySettings, profile_visibility: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select visibility" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">
+                        <div className="flex items-center gap-2">
+                          <Eye className="w-4 h-4" />
+                          <span>Public - Anyone can see your profile</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="friends">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4" />
+                          <span>Friends - Only friends can see your profile</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="private">
+                        <div className="flex items-center gap-2">
+                          <Lock className="w-4 h-4" />
+                          <span>Private - Only you can see your profile</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="show_followers">Show Followers</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Allow others to see who follows you
+                      </p>
+                    </div>
+                    <Switch
+                      id="show_followers"
+                      checked={privacySettings.show_followers}
+                      onCheckedChange={(checked) =>
+                        setPrivacySettings({ ...privacySettings, show_followers: checked })
+                      }
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="show_following">Show Following</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Allow others to see who you follow
+                      </p>
+                    </div>
+                    <Switch
+                      id="show_following"
+                      checked={privacySettings.show_following}
+                      onCheckedChange={(checked) =>
+                        setPrivacySettings({ ...privacySettings, show_following: checked })
+                      }
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="show_likes">Show Likes</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Allow others to see posts you've liked
+                      </p>
+                    </div>
+                    <Switch
+                      id="show_likes"
+                      checked={privacySettings.show_likes}
+                      onCheckedChange={(checked) =>
+                        setPrivacySettings({ ...privacySettings, show_likes: checked })
+                      }
+                    />
+                  </div>
+                </div>
               </div>
 
               <Button type="submit" className="w-full" disabled={loading}>
