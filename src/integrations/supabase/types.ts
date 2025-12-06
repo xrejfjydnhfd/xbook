@@ -96,6 +96,7 @@ export type Database = {
           id: string
           interested_count: number | null
           location: string | null
+          privacy: string | null
           title: string
           updated_at: string | null
         }
@@ -109,6 +110,7 @@ export type Database = {
           id?: string
           interested_count?: number | null
           location?: string | null
+          privacy?: string | null
           title: string
           updated_at?: string | null
         }
@@ -122,6 +124,7 @@ export type Database = {
           id?: string
           interested_count?: number | null
           location?: string | null
+          privacy?: string | null
           title?: string
           updated_at?: string | null
         }
@@ -822,6 +825,7 @@ export type Database = {
           id: string
           media_type: string | null
           media_url: string
+          privacy: string | null
           user_id: string
         }
         Insert: {
@@ -830,6 +834,7 @@ export type Database = {
           id?: string
           media_type?: string | null
           media_url: string
+          privacy?: string | null
           user_id: string
         }
         Update: {
@@ -838,6 +843,7 @@ export type Database = {
           id?: string
           media_type?: string | null
           media_url?: string
+          privacy?: string | null
           user_id?: string
         }
         Relationships: [
