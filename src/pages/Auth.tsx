@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { PasswordStrengthIndicator, validatePasswordStrength } from "@/components/auth/PasswordStrengthIndicator";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -18,6 +19,16 @@ const Auth = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!isLogin && !validatePasswordStrength(password)) {
+      toast({
+        title: "Weak Password",
+        description: "Please ensure your password meets all requirements.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -66,6 +77,8 @@ const Auth = () => {
     }
   };
 
+  const isSignupDisabled = !isLogin && !validatePasswordStrength(password);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-accent/10 to-primary/10 p-4">
       <Card className="w-full max-w-md">
@@ -104,17 +117,20 @@ const Auth = () => {
                 />
               </>
             )}
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="space-y-2">
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              {!isLogin && <PasswordStrengthIndicator password={password} />}
+            </div>
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90"
-              disabled={loading}
+              disabled={loading || isSignupDisabled}
             >
               {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
             </Button>
