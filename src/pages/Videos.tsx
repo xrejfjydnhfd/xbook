@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, UserPlus, Bookmark, Volume2, VolumeX, ArrowLeft, BadgeCheck } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, Volume2, VolumeX, ArrowLeft, BadgeCheck, MoreHorizontal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import CommentsDialog from "@/components/CommentsDialog";
@@ -10,6 +10,7 @@ import ShareDialog from "@/components/ShareDialog";
 import { FloatingMiniPlayer } from "@/components/video/FloatingMiniPlayer";
 import { useVideoPreload } from "@/hooks/useVideoPreload";
 import { useVideoCache } from "@/hooks/useVideoCache";
+import VideoOptionsSheet from "@/components/video/VideoOptionsSheet";
 
 const MAX_VIDEO_DURATION = 90; // 1 minute 30 seconds
 
@@ -30,6 +31,9 @@ const Videos = () => {
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
   const [miniPlayerVideo, setMiniPlayerVideo] = useState<any | null>(null);
   const [miniPlayerTime, setMiniPlayerTime] = useState(0);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [selectedVideoForOptions, setSelectedVideoForOptions] = useState<any | null>(null);
+  const [hiddenVideos, setHiddenVideos] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement>>({});
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -381,7 +385,11 @@ const Videos = () => {
         <span className="text-white font-bold text-lg">Reels</span>
       </div>
 
-      {videos.map((video, index) => (
+      {videos.filter(video => !hiddenVideos.has(video.id)).map((video, index) => {
+        // Determine if video is short (less than 60 seconds or vertical aspect ratio)
+        const isShortVideo = (video.video_duration && video.video_duration <= 60) || video.is_reel;
+        
+        return (
         <div 
           key={video.id}
           className="relative w-full h-screen snap-start snap-always flex items-center justify-center"
@@ -399,7 +407,7 @@ const Videos = () => {
             }}
             data-video-id={video.id}
             src={video.media_url ? getPreloadedUrl(video.media_url) : video.media_url}
-            className="w-full h-full object-cover"
+            className={`w-full h-full ${isShortVideo ? 'object-contain' : 'object-cover'}`}
             loop
             playsInline
             muted={mutedVideos.has(video.id)}
@@ -435,19 +443,35 @@ const Videos = () => {
             </div>
           )}
 
-          {/* Sound Toggle - Top Right */}
-          <Button
-            size="icon"
-            variant="ghost"
-            className="absolute top-16 right-4 z-30 bg-black/30 backdrop-blur-sm text-white rounded-full w-10 h-10"
-            onClick={() => toggleMute(video.id)}
-          >
-            {mutedVideos.has(video.id) ? (
-              <VolumeX className="w-5 h-5" />
-            ) : (
-              <Volume2 className="w-5 h-5" />
-            )}
-          </Button>
+          {/* Top Right Controls */}
+          <div className="absolute top-16 right-4 z-30 flex items-center gap-2">
+            {/* Options Button */}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="bg-black/30 backdrop-blur-sm text-white rounded-full w-10 h-10"
+              onClick={() => {
+                setSelectedVideoForOptions(video);
+                setOptionsOpen(true);
+              }}
+            >
+              <MoreHorizontal className="w-5 h-5" />
+            </Button>
+            
+            {/* Sound Toggle */}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="bg-black/30 backdrop-blur-sm text-white rounded-full w-10 h-10"
+              onClick={() => toggleMute(video.id)}
+            >
+              {mutedVideos.has(video.id) ? (
+                <VolumeX className="w-5 h-5" />
+              ) : (
+                <Volume2 className="w-5 h-5" />
+              )}
+            </Button>
+          </div>
 
           {/* User Info Overlay - Bottom Left */}
           <div className="absolute bottom-24 left-4 right-20 text-white z-10">
@@ -583,7 +607,33 @@ const Videos = () => {
             </div>
           </div>
         </div>
-      ))}
+        );
+      })}
+
+      {/* Video Options Sheet */}
+      {selectedVideoForOptions && (
+        <VideoOptionsSheet
+          open={optionsOpen}
+          onOpenChange={setOptionsOpen}
+          video={selectedVideoForOptions}
+          currentUserId={currentUserId}
+          isSaved={savedVideos.has(selectedVideoForOptions.id)}
+          onSave={() => {
+            setSavedVideos(prev => {
+              const newSet = new Set(prev);
+              if (newSet.has(selectedVideoForOptions.id)) {
+                newSet.delete(selectedVideoForOptions.id);
+              } else {
+                newSet.add(selectedVideoForOptions.id);
+              }
+              return newSet;
+            });
+          }}
+          onHide={() => {
+            setHiddenVideos(prev => new Set([...prev, selectedVideoForOptions.id]));
+          }}
+        />
+      )}
 
       {selectedVideo && (
         <>
