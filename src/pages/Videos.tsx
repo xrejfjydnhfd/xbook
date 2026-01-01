@@ -7,6 +7,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import CommentsDialog from "@/components/CommentsDialog";
 import ShareDialog from "@/components/ShareDialog";
+import { FloatingMiniPlayer } from "@/components/video/FloatingMiniPlayer";
+import { useVideoPreload } from "@/hooks/useVideoPreload";
+import { useVideoCache } from "@/hooks/useVideoCache";
 
 const MAX_VIDEO_DURATION = 90; // 1 minute 30 seconds
 
@@ -24,11 +27,18 @@ const Videos = () => {
   const [mutedVideos, setMutedVideos] = useState<Set<string>>(new Set());
   const [expandedCaptions, setExpandedCaptions] = useState<Set<string>>(new Set());
   const [commentsCount, setCommentsCount] = useState<Record<string, number>>({});
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const [miniPlayerVideo, setMiniPlayerVideo] = useState<any | null>(null);
+  const [miniPlayerTime, setMiniPlayerTime] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement>>({});
   const observerRef = useRef<IntersectionObserver | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Video preloading and caching hooks
+  const { preloadVideos, getPreloadedUrl, isPreloaded } = useVideoPreload();
+  const { savePlaybackPosition, getPlaybackPosition, recordView } = useVideoCache();
 
   useEffect(() => {
     if (currentUserId && videos.length > 0) {
@@ -74,6 +84,21 @@ const Videos = () => {
     fetchVideos();
   }, []);
 
+  // Preload videos when list changes
+  useEffect(() => {
+    if (videos.length > 0) {
+      const videoUrls = videos
+        .filter((v) => v.media_url)
+        .map((v) => v.media_url);
+      
+      const currentIndex = activeVideoId 
+        ? videos.findIndex((v) => v.id === activeVideoId) 
+        : 0;
+      
+      preloadVideos(videoUrls, currentIndex);
+    }
+  }, [videos, activeVideoId, preloadVideos]);
+
   useEffect(() => {
     if (videos.length === 0) return;
 
@@ -81,14 +106,28 @@ const Videos = () => {
       (entries) => {
         entries.forEach((entry) => {
           const video = entry.target as HTMLVideoElement;
+          const videoId = video.dataset.videoId;
+          
           if (entry.isIntersecting && entry.intersectionRatio >= 0.75) {
             video.play().catch(() => {});
+            if (videoId) {
+              setActiveVideoId(videoId);
+              setMiniPlayerVideo(null);
+            }
           } else {
             video.pause();
+            // Show mini player when scrolling away from active video
+            if (videoId && activeVideoId === videoId && entry.intersectionRatio < 0.3) {
+              const videoData = videos.find((v) => v.id === videoId);
+              if (videoData) {
+                setMiniPlayerTime(video.currentTime);
+                setMiniPlayerVideo(videoData);
+              }
+            }
           }
         });
       },
-      { threshold: [0.75] }
+      { threshold: [0.3, 0.75] }
     );
 
     Object.values(videoRefs.current).forEach((video) => {
@@ -98,7 +137,7 @@ const Videos = () => {
     return () => {
       observerRef.current?.disconnect();
     };
-  }, [videos]);
+  }, [videos, activeVideoId]);
 
   const fetchCurrentUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -266,6 +305,36 @@ const Videos = () => {
       video.currentTime = 0;
       video.pause();
     }
+    
+    // Save playback position for resume-where-left functionality
+    const videoData = videos.find((v) => v.id === videoId);
+    if (videoData?.media_url) {
+      savePlaybackPosition(videoData.media_url, video.currentTime, video.duration);
+    }
+  };
+
+  const handleVideoEnded = (videoId: string) => {
+    const videoData = videos.find((v) => v.id === videoId);
+    if (videoData?.media_url) {
+      recordView(videoData.media_url, videoData.video_duration || 0);
+    }
+  };
+
+  const getInitialTime = (mediaUrl: string | null) => {
+    if (!mediaUrl) return 0;
+    return getPlaybackPosition(mediaUrl);
+  };
+
+  const closeMiniPlayer = () => {
+    setMiniPlayerVideo(null);
+  };
+
+  const scrollToVideo = (videoId: string) => {
+    const video = videoRefs.current[videoId];
+    if (video) {
+      video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setMiniPlayerVideo(null);
+    }
   };
 
   const truncateCaption = (text: string | null, videoId: string) => {
@@ -312,22 +381,31 @@ const Videos = () => {
         <span className="text-white font-bold text-lg">Reels</span>
       </div>
 
-      {videos.map((video) => (
+      {videos.map((video, index) => (
         <div 
           key={video.id}
           className="relative w-full h-screen snap-start snap-always flex items-center justify-center"
         >
           <video
             ref={(el) => {
-              if (el) videoRefs.current[video.id] = el;
+              if (el) {
+                videoRefs.current[video.id] = el;
+                // Set initial time from cache for resume functionality
+                const initialTime = getInitialTime(video.media_url);
+                if (initialTime > 0 && el.currentTime === 0) {
+                  el.currentTime = initialTime;
+                }
+              }
             }}
-            src={video.media_url}
+            data-video-id={video.id}
+            src={video.media_url ? getPreloadedUrl(video.media_url) : video.media_url}
             className="w-full h-full object-cover"
             loop
             playsInline
             muted={mutedVideos.has(video.id)}
             preload="metadata"
             onTimeUpdate={(e) => handleVideoTimeUpdate(video.id, e)}
+            onEnded={() => handleVideoEnded(video.id)}
             onClick={(e) => {
               handleDoubleTap(video.id, video.profiles.id);
               if (e.currentTarget.paused) {
@@ -337,6 +415,13 @@ const Videos = () => {
               }
             }}
           />
+
+          {/* Preload indicator */}
+          {video.media_url && isPreloaded(video.media_url) && (
+            <div className="absolute top-16 left-4 z-30 bg-green-500/80 text-white text-xs px-2 py-1 rounded">
+              ⚡ Preloaded
+            </div>
+          )}
 
           {/* Double Tap Heart Animation */}
           {showHeart === video.id && (
@@ -514,6 +599,19 @@ const Videos = () => {
             postId={selectedVideo}
           />
         </>
+      )}
+
+      {/* Floating Mini Player */}
+      {miniPlayerVideo && miniPlayerVideo.media_url && (
+        <FloatingMiniPlayer
+          videoUrl={getPreloadedUrl(miniPlayerVideo.media_url)}
+          thumbnailUrl={miniPlayerVideo.thumbnail_url || undefined}
+          title={miniPlayerVideo.content || 'Video'}
+          author={miniPlayerVideo.profiles?.full_name || miniPlayerVideo.profiles?.username || 'Unknown'}
+          currentTime={miniPlayerTime}
+          onClose={closeMiniPlayer}
+          onExpand={() => scrollToVideo(miniPlayerVideo.id)}
+        />
       )}
     </div>
   );
