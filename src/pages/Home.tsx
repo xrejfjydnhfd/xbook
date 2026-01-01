@@ -6,14 +6,16 @@ import FacebookPostCard from "@/components/FacebookPostCard";
 import FacebookNav from "@/components/FacebookNav";
 import StoryBar from "@/components/StoryBar";
 import { Skeleton } from "@/components/ui/skeleton";
-
+import { Button } from "@/components/ui/button";
+import { Video } from "lucide-react";
+import EnhancedVideoUpload from "@/components/video/EnhancedVideoUpload";
 const Home = () => {
   const [posts, setPosts] = useState<any[]>([]);
   const [stories, setStories] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserProfile, setCurrentUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-
+  const [showVideoUpload, setShowVideoUpload] = useState(false);
   useEffect(() => {
     fetchCurrentUser();
     fetchPosts();
@@ -95,13 +97,26 @@ const Home = () => {
           {/* Divider */}
           <div className="h-2 bg-secondary/50" />
 
-          {/* Create Post */}
+          {/* Create Post + Video Upload */}
           <div className="bg-card p-3 mb-2">
-            <CreatePost 
-              userId={currentUserId} 
-              userProfile={currentUserProfile}
-              onPostCreated={fetchPosts} 
-            />
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <CreatePost 
+                  userId={currentUserId} 
+                  userProfile={currentUserProfile}
+                  onPostCreated={fetchPosts} 
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setShowVideoUpload(true)}
+                className="h-10 w-10 shrink-0 bg-primary/10 border-primary/20 hover:bg-primary/20"
+                title="Upload Video"
+              >
+                <Video className="h-5 w-5 text-primary" />
+              </Button>
+            </div>
           </div>
 
           {/* Divider */}
@@ -138,6 +153,15 @@ const Home = () => {
             )}
           </div>
         </div>
+
+        {/* Enhanced Video Upload Dialog */}
+        <EnhancedVideoUpload
+          open={showVideoUpload}
+          onOpenChange={setShowVideoUpload}
+          userId={currentUserId}
+          userProfile={currentUserProfile}
+          onPostCreated={fetchPosts}
+        />
       </div>
     </Layout>
   );
