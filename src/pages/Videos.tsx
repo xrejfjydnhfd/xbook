@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, Bookmark, Volume2, VolumeX, ArrowLeft, BadgeCheck, MoreHorizontal } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, Volume2, VolumeX, ArrowLeft, BadgeCheck, MoreHorizontal, TrendingUp, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import CommentsDialog from "@/components/CommentsDialog";
@@ -11,8 +11,42 @@ import { FloatingMiniPlayer } from "@/components/video/FloatingMiniPlayer";
 import { useVideoPreload } from "@/hooks/useVideoPreload";
 import { useVideoCache } from "@/hooks/useVideoCache";
 import VideoOptionsSheet from "@/components/video/VideoOptionsSheet";
+import TrendingVideos from "@/components/video/TrendingVideos";
+import VideoQualitySelector, { VideoQuality } from "@/components/video/VideoQualitySelector";
 
-const MAX_VIDEO_DURATION = 90; // 1 minute 30 seconds
+const MAX_VIDEO_DURATION = 90;
+
+type FeedTab = "forYou" | "following" | "trending";
+
+const TabSelector = ({ activeTab, setActiveTab }: { activeTab: FeedTab; setActiveTab: (tab: FeedTab) => void }) => (
+  <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex bg-black/50 backdrop-blur-md rounded-full p-1">
+    <Button
+      size="sm"
+      variant={activeTab === "forYou" ? "default" : "ghost"}
+      className={`rounded-full px-4 ${activeTab !== "forYou" ? "text-white" : ""}`}
+      onClick={() => setActiveTab("forYou")}
+    >
+      For You
+    </Button>
+    <Button
+      size="sm"
+      variant={activeTab === "following" ? "default" : "ghost"}
+      className={`rounded-full px-4 ${activeTab !== "following" ? "text-white" : ""}`}
+      onClick={() => setActiveTab("following")}
+    >
+      Following
+    </Button>
+    <Button
+      size="sm"
+      variant={activeTab === "trending" ? "default" : "ghost"}
+      className={`rounded-full px-4 ${activeTab !== "trending" ? "text-white" : ""}`}
+      onClick={() => setActiveTab("trending")}
+    >
+      <TrendingUp className="w-4 h-4 mr-1" />
+      Trending
+    </Button>
+  </div>
+);
 
 const Videos = () => {
   const [videos, setVideos] = useState<any[]>([]);
@@ -34,13 +68,15 @@ const Videos = () => {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [selectedVideoForOptions, setSelectedVideoForOptions] = useState<any | null>(null);
   const [hiddenVideos, setHiddenVideos] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<FeedTab>("forYou");
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [videoQuality, setVideoQuality] = useState<VideoQuality>("auto");
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement>>({});
   const observerRef = useRef<IntersectionObserver | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Video preloading and caching hooks
   const { preloadVideos, getPreloadedUrl, isPreloaded } = useVideoPreload();
   const { savePlaybackPosition, getPlaybackPosition, recordView } = useVideoCache();
 
@@ -50,6 +86,28 @@ const Videos = () => {
       fetchCommentsCount();
     }
   }, [currentUserId, videos]);
+
+  useEffect(() => {
+    fetchCurrentUser();
+    fetchVideos();
+  }, []);
+
+  useEffect(() => {
+    if (currentUserId) {
+      fetchFollowing();
+    }
+  }, [currentUserId]);
+
+  const fetchFollowing = async () => {
+    const { data } = await supabase
+      .from("follows")
+      .select("following_id")
+      .eq("follower_id", currentUserId);
+
+    if (data) {
+      setFollowingIds(data.map((f) => f.following_id));
+    }
+  };
 
   const fetchLikesForVideos = async () => {
     const likesData: Record<string, { liked: boolean; count: number }> = {};
@@ -84,12 +142,6 @@ const Videos = () => {
   };
 
   useEffect(() => {
-    fetchCurrentUser();
-    fetchVideos();
-  }, []);
-
-  // Preload videos when list changes
-  useEffect(() => {
     if (videos.length > 0) {
       const videoUrls = videos
         .filter((v) => v.media_url)
@@ -120,7 +172,6 @@ const Videos = () => {
             }
           } else {
             video.pause();
-            // Show mini player when scrolling away from active video
             if (videoId && activeVideoId === videoId && entry.intersectionRatio < 0.3) {
               const videoData = videos.find((v) => v.id === videoId);
               if (videoData) {
@@ -170,6 +221,16 @@ const Videos = () => {
     }
   };
 
+  const getFilteredVideos = () => {
+    const visibleVideos = videos.filter(video => !hiddenVideos.has(video.id));
+    
+    if (activeTab === "following") {
+      return visibleVideos.filter(video => followingIds.includes(video.profiles?.id));
+    }
+    
+    return visibleVideos;
+  };
+
   const handleFollow = async (userId: string) => {
     try {
       const { error } = await supabase.from("follows").insert({
@@ -185,6 +246,7 @@ const Videos = () => {
         type: "follow",
       });
 
+      setFollowingIds((prev) => [...prev, userId]);
       toast({
         title: "Following!",
         description: "You are now following this user",
@@ -301,7 +363,7 @@ const Videos = () => {
       setTimeout(() => setShowHeart(null), 1000);
     }
     setLastTap(now);
-  }, [lastTap, videoLikes, handleLike]);
+  }, [lastTap, videoLikes]);
 
   const handleVideoTimeUpdate = (videoId: string, e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
@@ -310,7 +372,6 @@ const Videos = () => {
       video.pause();
     }
     
-    // Save playback position for resume-where-left functionality
     const videoData = videos.find((v) => v.id === videoId);
     if (videoData?.media_url) {
       savePlaybackPosition(videoData.media_url, video.currentTime, video.duration);
@@ -348,10 +409,55 @@ const Videos = () => {
     return text.slice(0, 80) + "...";
   };
 
-  if (videos.length === 0) {
+  const filteredVideos = getFilteredVideos();
+
+  if (activeTab === "trending") {
     return (
-      <div className="fixed inset-0 bg-black flex items-center justify-center">
-        <p className="text-white text-lg">No videos yet</p>
+      <div className="fixed inset-0 bg-black overflow-y-auto">
+        {/* Back Button */}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="fixed top-4 left-4 z-50 text-white bg-black/30 backdrop-blur-sm rounded-full"
+          onClick={() => navigate("/")}
+        >
+          <ArrowLeft className="w-6 h-6" />
+        </Button>
+
+        <TabSelector activeTab={activeTab} setActiveTab={setActiveTab} />
+
+        <div className="pt-20">
+          <TrendingVideos />
+        </div>
+      </div>
+    );
+  }
+
+  if (filteredVideos.length === 0) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center">
+        <TabSelector activeTab={activeTab} setActiveTab={setActiveTab} />
+
+        <Button
+          size="icon"
+          variant="ghost"
+          className="fixed top-4 left-4 z-50 text-white bg-black/30 backdrop-blur-sm rounded-full"
+          onClick={() => navigate("/")}
+        >
+          <ArrowLeft className="w-6 h-6" />
+        </Button>
+
+        <Users className="w-16 h-16 text-white/50 mb-4" />
+        <p className="text-white text-lg">
+          {activeTab === "following" 
+            ? "No videos from people you follow" 
+            : "No videos yet"}
+        </p>
+        <p className="text-white/60 text-sm mt-2">
+          {activeTab === "following" 
+            ? "Follow creators to see their videos here" 
+            : "Be the first to upload a video!"}
+        </p>
       </div>
     );
   }
@@ -380,13 +486,9 @@ const Videos = () => {
         <ArrowLeft className="w-6 h-6" />
       </Button>
 
-      {/* Reels Label */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
-        <span className="text-white font-bold text-lg">Reels</span>
-      </div>
+      <TabSelector activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {videos.filter(video => !hiddenVideos.has(video.id)).map((video, index) => {
-        // Determine if video is short (less than 60 seconds or vertical aspect ratio)
+      {filteredVideos.map((video) => {
         const isShortVideo = (video.video_duration && video.video_duration <= 60) || video.is_reel;
         
         return (
@@ -398,7 +500,6 @@ const Videos = () => {
             ref={(el) => {
               if (el) {
                 videoRefs.current[video.id] = el;
-                // Set initial time from cache for resume functionality
                 const initialTime = getInitialTime(video.media_url);
                 if (initialTime > 0 && el.currentTime === 0) {
                   el.currentTime = initialTime;
@@ -424,14 +525,12 @@ const Videos = () => {
             }}
           />
 
-          {/* Preload indicator */}
           {video.media_url && isPreloaded(video.media_url) && (
             <div className="absolute top-16 left-4 z-30 bg-green-500/80 text-white text-xs px-2 py-1 rounded">
               ⚡ Preloaded
             </div>
           )}
 
-          {/* Double Tap Heart Animation */}
           {showHeart === video.id && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
               <Heart 
@@ -445,6 +544,13 @@ const Videos = () => {
 
           {/* Top Right Controls */}
           <div className="absolute top-16 right-4 z-30 flex items-center gap-2">
+            {/* Quality Selector */}
+            <VideoQualitySelector
+              currentQuality={videoQuality}
+              onQualityChange={setVideoQuality}
+              className="bg-black/30 backdrop-blur-sm"
+            />
+            
             {/* Options Button */}
             <Button
               size="icon"
@@ -488,7 +594,7 @@ const Videos = () => {
               <div className="flex items-center gap-2">
                 <span className="font-bold">{video.profiles.username}</span>
                 <BadgeCheck className="w-4 h-4 text-primary fill-primary" />
-                {video.profiles.id !== currentUserId && (
+                {video.profiles.id !== currentUserId && !followingIds.includes(video.profiles.id) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -526,9 +632,8 @@ const Videos = () => {
             )}
           </div>
 
-          {/* Right Side Actions - Facebook Reels Style */}
+          {/* Right Side Actions */}
           <div className="absolute bottom-24 right-3 flex flex-col gap-5 items-center z-10">
-            {/* Like */}
             <div className="flex flex-col items-center">
               <Button
                 size="icon"
@@ -545,7 +650,6 @@ const Videos = () => {
               </span>
             </div>
 
-            {/* Comment */}
             <div className="flex flex-col items-center">
               <Button
                 size="icon"
@@ -563,7 +667,6 @@ const Videos = () => {
               </span>
             </div>
 
-            {/* Share */}
             <div className="flex flex-col items-center">
               <Button
                 size="icon"
@@ -579,7 +682,6 @@ const Videos = () => {
               <span className="text-white text-xs font-semibold mt-1">Share</span>
             </div>
 
-            {/* Save */}
             <div className="flex flex-col items-center">
               <Button
                 size="icon"
@@ -594,7 +696,6 @@ const Videos = () => {
               <span className="text-white text-xs font-semibold mt-1">Save</span>
             </div>
 
-            {/* Profile Avatar */}
             <div 
               className="w-10 h-10 rounded-lg overflow-hidden border-2 border-white cursor-pointer mt-2"
               onClick={() => navigate(`/profile/${video.profiles.id}`)}
@@ -610,7 +711,6 @@ const Videos = () => {
         );
       })}
 
-      {/* Video Options Sheet */}
       {selectedVideoForOptions && (
         <VideoOptionsSheet
           open={optionsOpen}
@@ -651,7 +751,6 @@ const Videos = () => {
         </>
       )}
 
-      {/* Floating Mini Player */}
       {miniPlayerVideo && miniPlayerVideo.media_url && (
         <FloatingMiniPlayer
           videoUrl={getPreloadedUrl(miniPlayerVideo.media_url)}

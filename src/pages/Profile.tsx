@@ -5,10 +5,11 @@ import Layout from "@/components/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, Settings, LogOut, Plus, Image as ImageIcon, Video } from "lucide-react";
+import { MessageCircle, Settings, LogOut, Plus, Image as ImageIcon, Video, MoreHorizontal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import PostCard from "@/components/PostCard";
 import ProfileMenu from "@/components/profile/ProfileMenu";
+import ProfileOptionsSheet from "@/components/profile/ProfileOptionsSheet";
 
 const Profile = () => {
   const { userId } = useParams();
@@ -19,6 +20,7 @@ const Profile = () => {
   const [currentUserId, setCurrentUserId] = useState("");
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -155,6 +157,14 @@ const Profile = () => {
               </div>
               {isOwnProfile ? (
                 <div className="flex gap-2">
+                  {/* Profile Options Button */}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setOptionsOpen(true)}
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                  </Button>
                   <Button
                     variant="outline"
                     size="icon"
@@ -259,6 +269,14 @@ const Profile = () => {
           ))
         )}
       </div>
+
+      {/* Profile Options Sheet */}
+      <ProfileOptionsSheet
+        open={optionsOpen}
+        onOpenChange={setOptionsOpen}
+        currentUserId={currentUserId}
+        username={profile.username}
+      />
     </Layout>
   );
 };
