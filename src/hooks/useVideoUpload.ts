@@ -216,7 +216,7 @@ export const useVideoUpload = (userId: string) => {
     return false;
   }, []);
 
-  // Main upload function
+  // Main upload function - uses XMLHttpRequest for real progress tracking
   const uploadVideo = useCallback(async (
     file: File,
     options?: {
@@ -243,6 +243,18 @@ export const useVideoUpload = (userId: string) => {
       lastTimeRef.current = Date.now();
       abortControllerRef.current = new AbortController();
 
+      const totalBytes = file.size;
+
+      setProgress({
+        bytesUploaded: 0,
+        totalBytes,
+        percentage: 0,
+        speed: 0,
+        estimatedTimeRemaining: 0,
+        currentChunk: 0,
+        totalChunks: 1,
+      });
+
       // Extract metadata and generate thumbnail
       setStatus('generating-thumbnail');
       const metadata = await extractVideoMetadata(file);
@@ -253,120 +265,104 @@ export const useVideoUpload = (userId: string) => {
         ? await compressVideo(file) 
         : file;
 
-      // Create chunks
-      const chunks = createChunks(processedFile);
-      const totalChunks = chunks.length;
-      
-      chunksRef.current = chunks.map((chunk, i) => ({
-        id: `chunk_${i}`,
-        chunkNumber: i,
-        uploaded: false,
-        retryCount: 0,
-        size: chunk.size,
-      }));
-
-      setProgress({
-        bytesUploaded: 0,
-        totalBytes: processedFile.size,
-        percentage: 0,
-        speed: 0,
-        estimatedTimeRemaining: 0,
-        currentChunk: 0,
-        totalChunks,
-      });
-
-      // Start upload
+      // Start upload with real progress tracking using XMLHttpRequest
       setStatus('uploading');
       const fileExt = file.name.split('.').pop();
-      const baseFileName = `${userId}/${Date.now()}`;
+      const fullFileName = `${userId}/${Date.now()}.${fileExt}`;
       
-      let bytesUploaded = 0;
-      
-      // Upload chunks (can be parallel for fast networks)
-      const avgSpeed = speedHistoryRef.current.length > 0
-        ? speedHistoryRef.current.reduce((a, b) => a + b, 0) / speedHistoryRef.current.length
-        : 0;
-      
-      const useParallel = avgSpeed > 2 * 1024 * 1024; // > 2MB/s
-      
-      if (useParallel && totalChunks > 2) {
-        // Parallel upload for fast networks (max 3 concurrent)
-        const concurrency = 3;
-        for (let i = 0; i < totalChunks; i += concurrency) {
-          const batch = chunks.slice(i, i + concurrency);
-          await Promise.all(
-            batch.map((chunk, j) => uploadChunk(chunk, i + j, baseFileName, totalChunks))
-          );
+      // Use XMLHttpRequest for real-time progress tracking
+      const uploadWithProgress = (): Promise<void> => {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
           
-          bytesUploaded = chunks.slice(0, i + batch.length).reduce((sum, c) => sum + c.size, 0);
-          const speed = updateSpeed(bytesUploaded);
-          const remaining = (processedFile.size - bytesUploaded) / (speed || 1);
-          
-          setProgress({
-            bytesUploaded,
-            totalBytes: processedFile.size,
-            percentage: Math.round((bytesUploaded / processedFile.size) * 100),
-            speed,
-            estimatedTimeRemaining: remaining,
-            currentChunk: Math.min(i + batch.length, totalChunks),
-            totalChunks,
+          xhr.upload.addEventListener('progress', (event) => {
+            if (isPausedRef.current) return;
+            
+            if (event.lengthComputable) {
+              const bytesUploaded = event.loaded;
+              const now = Date.now();
+              const timeDiff = (now - lastTimeRef.current) / 1000;
+              
+              // Calculate speed
+              let currentSpeed = 0;
+              if (timeDiff >= 1) {
+                const bytesDiff = bytesUploaded - lastBytesRef.current;
+                currentSpeed = bytesDiff / timeDiff;
+                
+                speedHistoryRef.current.push(currentSpeed);
+                if (speedHistoryRef.current.length > 5) speedHistoryRef.current.shift();
+                
+                lastBytesRef.current = bytesUploaded;
+                lastTimeRef.current = now;
+              } else if (speedHistoryRef.current.length > 0) {
+                currentSpeed = speedHistoryRef.current[speedHistoryRef.current.length - 1];
+              }
+              
+              const avgSpeed = speedHistoryRef.current.length > 0
+                ? speedHistoryRef.current.reduce((a, b) => a + b, 0) / speedHistoryRef.current.length
+                : currentSpeed;
+              
+              const remainingBytes = totalBytes - bytesUploaded;
+              const estimatedTime = avgSpeed > 0 ? remainingBytes / avgSpeed : 0;
+              const percentage = Math.round((bytesUploaded / totalBytes) * 100);
+              
+              const newProgress: UploadProgress = {
+                bytesUploaded,
+                totalBytes,
+                percentage,
+                speed: avgSpeed,
+                estimatedTimeRemaining: estimatedTime,
+                currentChunk: 1,
+                totalChunks: 1,
+              };
+              
+              setProgress(newProgress);
+              options?.onProgress?.(newProgress);
+            }
           });
-          
-          options?.onProgress?.({
-            bytesUploaded,
-            totalBytes: processedFile.size,
-            percentage: Math.round((bytesUploaded / processedFile.size) * 100),
-            speed,
-            estimatedTimeRemaining: remaining,
-            currentChunk: Math.min(i + batch.length, totalChunks),
-            totalChunks,
-          });
-        }
-      } else {
-        // Sequential upload for slow networks
-        for (let i = 0; i < totalChunks; i++) {
-          if (isPausedRef.current) {
-            setStatus('paused');
-            return null;
-          }
-          
-          await uploadChunk(chunks[i], i, baseFileName, totalChunks);
-          bytesUploaded += chunks[i].size;
-          
-          const speed = updateSpeed(bytesUploaded);
-          const remaining = (processedFile.size - bytesUploaded) / (speed || 1);
-          
-          setProgress({
-            bytesUploaded,
-            totalBytes: processedFile.size,
-            percentage: Math.round((bytesUploaded / processedFile.size) * 100),
-            speed,
-            estimatedTimeRemaining: remaining,
-            currentChunk: i + 1,
-            totalChunks,
-          });
-          
-          options?.onProgress?.({
-            bytesUploaded,
-            totalBytes: processedFile.size,
-            percentage: Math.round((bytesUploaded / processedFile.size) * 100),
-            speed,
-            estimatedTimeRemaining: remaining,
-            currentChunk: i + 1,
-            totalChunks,
-          });
-        }
-      }
 
-      // For simplicity, we'll upload the full file as well (chunks are for resume capability)
-      setStatus('processing');
-      const fullFileName = `${baseFileName}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('media')
-        .upload(fullFileName, processedFile);
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              // Try to parse error message
+              let errorMsg = `Upload failed with status ${xhr.status}`;
+              try {
+                const response = JSON.parse(xhr.responseText);
+                errorMsg = response.message || response.error || errorMsg;
+              } catch (e) {}
+              reject(new Error(errorMsg));
+            }
+          });
 
-      if (uploadError) throw uploadError;
+          xhr.addEventListener('error', () => {
+            reject(new Error('Network error during upload'));
+          });
+
+          xhr.addEventListener('abort', () => {
+            reject(new Error('Upload cancelled'));
+          });
+
+          // Get Supabase URL and key from environment
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+          
+          xhr.open('POST', `${supabaseUrl}/storage/v1/object/media/${fullFileName}`);
+          xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`);
+          xhr.setRequestHeader('x-upsert', 'true');
+          
+          // Store abort reference
+          const originalAbort = abortControllerRef.current;
+          abortControllerRef.current = {
+            abort: () => xhr.abort(),
+            signal: originalAbort?.signal || new AbortController().signal,
+          } as AbortController;
+          
+          xhr.send(processedFile);
+        });
+      };
+
+      await uploadWithProgress();
 
       setStatus('finalizing');
       
@@ -374,29 +370,21 @@ export const useVideoUpload = (userId: string) => {
         .from('media')
         .getPublicUrl(fullFileName);
 
-      // Clean up chunk files (in background)
-      for (let i = 0; i < totalChunks; i++) {
-        supabase.storage
-          .from('media')
-          .remove([`${baseFileName}_chunk_${i}`])
-          .catch(() => {}); // Ignore errors
-      }
-
       setStatus('complete');
-      setProgress(prev => ({ ...prev, percentage: 100 }));
+      setProgress(prev => ({ ...prev, percentage: 100, bytesUploaded: totalBytes }));
 
       return { url: publicUrl, metadata };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Video upload error:', error);
       setStatus('error');
       toast({
         title: 'Upload failed',
-        description: 'Please try again',
+        description: error.message || 'Please try again',
         variant: 'destructive',
       });
       return null;
     }
-  }, [userId, extractVideoMetadata, compressVideo, createChunks, uploadChunk, updateSpeed, toast]);
+  }, [userId, extractVideoMetadata, compressVideo, toast]);
 
   // Pause upload
   const pauseUpload = useCallback(() => {

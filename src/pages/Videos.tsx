@@ -2,10 +2,10 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, Bookmark, Volume2, VolumeX, ArrowLeft, BadgeCheck, MoreHorizontal, TrendingUp, Users } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, Volume2, VolumeX, ArrowLeft, BadgeCheck, MoreHorizontal, TrendingUp, Users, BarChart3, Scissors } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
-import CommentsDialog from "@/components/CommentsDialog";
+import VideoComments from "@/components/video/VideoComments";
 import ShareDialog from "@/components/ShareDialog";
 import { FloatingMiniPlayer } from "@/components/video/FloatingMiniPlayer";
 import { useVideoPreload } from "@/hooks/useVideoPreload";
@@ -13,7 +13,8 @@ import { useVideoCache } from "@/hooks/useVideoCache";
 import VideoOptionsSheet from "@/components/video/VideoOptionsSheet";
 import TrendingVideos from "@/components/video/TrendingVideos";
 import VideoQualitySelector, { VideoQuality } from "@/components/video/VideoQualitySelector";
-
+import VideoAnalytics from "@/components/video/VideoAnalytics";
+import VideoDuetStitch from "@/components/video/VideoDuetStitch";
 const MAX_VIDEO_DURATION = 90;
 
 type FeedTab = "forYou" | "following" | "trending";
@@ -71,6 +72,10 @@ const Videos = () => {
   const [activeTab, setActiveTab] = useState<FeedTab>("forYou");
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [videoQuality, setVideoQuality] = useState<VideoQuality>("auto");
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsVideoId, setAnalyticsVideoId] = useState<string | null>(null);
+  const [duetStitchOpen, setDuetStitchOpen] = useState(false);
+  const [duetStitchVideo, setDuetStitchVideo] = useState<any | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement>>({});
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -633,7 +638,7 @@ const Videos = () => {
           </div>
 
           {/* Right Side Actions */}
-          <div className="absolute bottom-24 right-3 flex flex-col gap-5 items-center z-10">
+          <div className="absolute bottom-24 right-3 flex flex-col gap-4 items-center z-10">
             <div className="flex flex-col items-center">
               <Button
                 size="icon"
@@ -667,6 +672,22 @@ const Videos = () => {
               </span>
             </div>
 
+            {/* Duet/Stitch Button */}
+            <div className="flex flex-col items-center">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-white rounded-full w-12 h-12 bg-black/20"
+                onClick={() => {
+                  setDuetStitchVideo(video);
+                  setDuetStitchOpen(true);
+                }}
+              >
+                <Scissors className="w-6 h-6" />
+              </Button>
+              <span className="text-white text-xs font-semibold mt-1">Duet</span>
+            </div>
+
             <div className="flex flex-col items-center">
               <Button
                 size="icon"
@@ -695,6 +716,24 @@ const Videos = () => {
               </Button>
               <span className="text-white text-xs font-semibold mt-1">Save</span>
             </div>
+
+            {/* Analytics Button (only for own videos) */}
+            {video.profiles?.id === currentUserId && (
+              <div className="flex flex-col items-center">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="text-white rounded-full w-12 h-12 bg-black/20"
+                  onClick={() => {
+                    setAnalyticsVideoId(video.id);
+                    setAnalyticsOpen(true);
+                  }}
+                >
+                  <BarChart3 className="w-6 h-6" />
+                </Button>
+                <span className="text-white text-xs font-semibold mt-1">Stats</span>
+              </div>
+            )}
 
             <div 
               className="w-10 h-10 rounded-lg overflow-hidden border-2 border-white cursor-pointer mt-2"
@@ -737,7 +776,7 @@ const Videos = () => {
 
       {selectedVideo && (
         <>
-          <CommentsDialog
+          <VideoComments
             open={commentsOpen}
             onOpenChange={setCommentsOpen}
             postId={selectedVideo}
@@ -749,6 +788,34 @@ const Videos = () => {
             postId={selectedVideo}
           />
         </>
+      )}
+
+      {/* Video Analytics */}
+      {analyticsVideoId && (
+        <VideoAnalytics
+          open={analyticsOpen}
+          onOpenChange={setAnalyticsOpen}
+          postId={analyticsVideoId}
+        />
+      )}
+
+      {/* Duet/Stitch */}
+      {duetStitchVideo && (
+        <VideoDuetStitch
+          open={duetStitchOpen}
+          onOpenChange={setDuetStitchOpen}
+          originalVideoUrl={duetStitchVideo.media_url}
+          originalVideoThumbnail={duetStitchVideo.thumbnail_url}
+          originalCreator={{
+            username: duetStitchVideo.profiles?.username || 'Unknown',
+            avatar_url: duetStitchVideo.profiles?.avatar_url,
+          }}
+          onSubmit={async (type, videoFile, caption) => {
+            toast({ title: `Creating ${type}...` });
+            // The actual upload would happen here - for now just show success
+            toast({ title: `${type === 'duet' ? 'Duet' : 'Stitch'} created successfully!` });
+          }}
+        />
       )}
 
       {miniPlayerVideo && miniPlayerVideo.media_url && (

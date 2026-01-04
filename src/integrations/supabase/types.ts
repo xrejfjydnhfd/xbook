@@ -19,6 +19,7 @@ export type Database = {
           content: string
           created_at: string | null
           id: string
+          parent_id: string | null
           post_id: string
           user_id: string
         }
@@ -26,6 +27,7 @@ export type Database = {
           content: string
           created_at?: string | null
           id?: string
+          parent_id?: string | null
           post_id: string
           user_id: string
         }
@@ -33,10 +35,18 @@ export type Database = {
           content?: string
           created_at?: string | null
           id?: string
+          parent_id?: string | null
           post_id?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "comments_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "comments_post_id_fkey"
             columns: ["post_id"]
@@ -879,6 +889,93 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      video_responses: {
+        Row: {
+          created_at: string
+          id: string
+          original_post_id: string
+          response_post_id: string
+          response_type: string
+          stitch_trim_seconds: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          original_post_id: string
+          response_post_id: string
+          response_type: string
+          stitch_trim_seconds?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          original_post_id?: string
+          response_post_id?: string
+          response_type?: string
+          stitch_trim_seconds?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_responses_original_post_id_fkey"
+            columns: ["original_post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_responses_response_post_id_fkey"
+            columns: ["response_post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_views: {
+        Row: {
+          country: string | null
+          created_at: string
+          id: string
+          post_id: string
+          user_id: string | null
+          view_percentage: number | null
+          watched_duration: number | null
+        }
+        Insert: {
+          country?: string | null
+          created_at?: string
+          id?: string
+          post_id: string
+          user_id?: string | null
+          view_percentage?: number | null
+          watched_duration?: number | null
+        }
+        Update: {
+          country?: string | null
+          created_at?: string
+          id?: string
+          post_id?: string
+          user_id?: string | null
+          view_percentage?: number | null
+          watched_duration?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_views_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       watch_history: {
         Row: {
