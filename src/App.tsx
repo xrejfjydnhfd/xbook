@@ -14,6 +14,7 @@ import Messages from "./pages/Messages";
 import Settings from "./pages/Settings";
 import Search from "./pages/Search";
 import Addmin from "./pages/Addmin";
+import WatchHistory from "./pages/WatchHistory";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
           <Route path="/settings" element={<Settings />} />
           <Route path="/search" element={<Search />} />
           <Route path="/addmin" element={<Addmin />} />
+          <Route path="/watch-history" element={<WatchHistory />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
