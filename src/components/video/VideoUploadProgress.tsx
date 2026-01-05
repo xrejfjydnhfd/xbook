@@ -9,7 +9,8 @@ import {
   AlertCircle,
   Upload,
   Zap,
-  Wifi
+  Wifi,
+  Server
 } from "lucide-react";
 
 interface UploadProgress {
@@ -46,7 +47,8 @@ const VideoUploadProgress = ({
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   const getStatusIcon = () => {
@@ -59,7 +61,7 @@ const VideoUploadProgress = ({
       case 'processing':
         return <Zap className="w-5 h-5 text-yellow-500 animate-pulse" />;
       case 'finalizing':
-        return <Loader2 className="w-5 h-5 animate-spin text-green-500" />;
+        return <Server className="w-5 h-5 animate-spin text-green-500" />;
       case 'complete':
         return <CheckCircle2 className="w-5 h-5 text-green-500" />;
       case 'error':
@@ -78,7 +80,7 @@ const VideoUploadProgress = ({
       case 'generating-thumbnail':
         return 'Generating thumbnail...';
       case 'uploading':
-        return `Uploading... ${progress.percentage}%`;
+        return `Uploading ${progress.percentage}%`;
       case 'processing':
         return 'Processing your video...';
       case 'finalizing':
@@ -92,6 +94,13 @@ const VideoUploadProgress = ({
       default:
         return '';
     }
+  };
+
+  const getProgressColor = () => {
+    if (status === 'error') return 'bg-destructive';
+    if (status === 'paused') return 'bg-yellow-500';
+    if (status === 'complete') return 'bg-green-500';
+    return '';
   };
 
   const isUploading = status === 'uploading';
@@ -132,6 +141,7 @@ const VideoUploadProgress = ({
                     variant="ghost"
                     className="h-8 w-8"
                     onClick={onResume}
+                    title="Resume upload"
                   >
                     <Play className="w-4 h-4" />
                   </Button>
@@ -141,6 +151,7 @@ const VideoUploadProgress = ({
                     variant="ghost"
                     className="h-8 w-8"
                     onClick={onPause}
+                    title="Pause upload"
                   >
                     <Pause className="w-4 h-4" />
                   </Button>
@@ -150,6 +161,7 @@ const VideoUploadProgress = ({
                   variant="ghost"
                   className="h-8 w-8 text-destructive"
                   onClick={onCancel}
+                  title="Cancel upload"
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -159,38 +171,54 @@ const VideoUploadProgress = ({
 
           {/* Progress bar */}
           {!isComplete && !isError && (
-            <Progress 
-              value={progress.percentage} 
-              className="h-2"
-            />
+            <div className="space-y-1">
+              <Progress 
+                value={progress.percentage} 
+                className={`h-2 ${getProgressColor()}`}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{progress.percentage}%</span>
+                <span>{formatBytes(progress.bytesUploaded)} / {formatBytes(progress.totalBytes)}</span>
+              </div>
+            </div>
           )}
 
-          {/* Stats */}
+          {/* Detailed stats */}
           {isUploading && (
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <span>
-                {formatBytes(progress.bytesUploaded)} / {formatBytes(progress.totalBytes)}
-              </span>
-              
               {progress.speed > 0 && (
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 bg-background/50 px-2 py-1 rounded">
                   <Wifi className="w-3 h-3" />
                   {formatSpeed(progress.speed)}
                 </span>
               )}
               
               {progress.estimatedTimeRemaining > 0 && progress.estimatedTimeRemaining < Infinity && (
-                <span>
+                <span className="bg-background/50 px-2 py-1 rounded">
                   {formatTimeRemaining(progress.estimatedTimeRemaining)}
                 </span>
               )}
               
               {progress.totalChunks > 1 && (
-                <span>
+                <span className="bg-background/50 px-2 py-1 rounded">
                   Chunk {progress.currentChunk}/{progress.totalChunks}
                 </span>
               )}
             </div>
+          )}
+
+          {/* Success message */}
+          {isComplete && (
+            <p className="text-xs text-green-600">
+              Your video has been uploaded successfully!
+            </p>
+          )}
+
+          {/* Error retry hint */}
+          {isError && (
+            <p className="text-xs text-destructive">
+              Something went wrong. Please try again.
+            </p>
           )}
         </div>
       </div>
