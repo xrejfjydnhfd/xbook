@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { startTusUpload } from "@/lib/uploads/tusVideoUploader";
 
-interface UploadProgress {
+export interface UploadProgress {
   bytesUploaded: number;
   totalBytes: number;
   percentage: number;
@@ -12,26 +13,17 @@ interface UploadProgress {
   totalChunks: number;
 }
 
-interface ChunkState {
-  index: number;
-  start: number;
-  end: number;
-  uploaded: boolean;
-  retries: number;
-}
+type UploadStatus =
+  | "idle"
+  | "preparing"
+  | "generating-thumbnail"
+  | "uploading"
+  | "finalizing"
+  | "complete"
+  | "error"
+  | "paused";
 
-type UploadStatus = 
-  | 'idle' 
-  | 'preparing' 
-  | 'uploading' 
-  | 'processing' 
-  | 'generating-thumbnail'
-  | 'finalizing' 
-  | 'complete' 
-  | 'error'
-  | 'paused';
-
-interface VideoMetadata {
+export interface VideoMetadata {
   duration: number;
   width: number;
   height: number;
@@ -39,13 +31,16 @@ interface VideoMetadata {
   isReel: boolean;
 }
 
-// Chunk sizes based on network speed
-const CHUNK_SIZE_SLOW = 2 * 1024 * 1024;   // 2MB for slow networks
-const CHUNK_SIZE_MEDIUM = 4 * 1024 * 1024; // 4MB for medium networks
-const CHUNK_SIZE_FAST = 8 * 1024 * 1024;   // 8MB for fast networks
-const MAX_RETRIES = 5;
+// Requirement: 5MB–10MB chunks
+const CHUNK_SIZE_BYTES = 6 * 1024 * 1024; // 6MB
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
 
 export const useVideoUpload = (userId: string) => {
+  const { toast } = useToast();
+
   const [progress, setProgress] = useState<UploadProgress>({
     bytesUploaded: 0,
     totalBytes: 0,
@@ -55,78 +50,39 @@ export const useVideoUpload = (userId: string) => {
     currentChunk: 0,
     totalChunks: 0,
   });
-  const [status, setStatus] = useState<UploadStatus>('idle');
+
+  const [status, setStatus] = useState<UploadStatus>("idle");
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
-  
-  const isPausedRef = useRef(false);
-  const isCancelledRef = useRef(false);
-  const chunksStateRef = useRef<ChunkState[]>([]);
-  const uploadedBytesRef = useRef(0);
+
+  const uploadRef = useRef<import("tus-js-client").Upload | null>(null);
+  const pausedByOfflineRef = useRef(false);
+
+  // Speed estimation (moving average)
+  const lastSampleRef = useRef<{ t: number; bytes: number }>({ t: Date.now(), bytes: 0 });
   const speedSamplesRef = useRef<number[]>([]);
-  const lastProgressTimeRef = useRef(Date.now());
-  const lastProgressBytesRef = useRef(0);
-  const currentXhrRef = useRef<XMLHttpRequest | null>(null);
+
   const fileRef = useRef<File | null>(null);
-  const fileNameRef = useRef<string>('');
-  
-  const { toast } = useToast();
+  const objectNameRef = useRef<string>("");
 
-  // Calculate adaptive chunk size based on recent speed
-  const getAdaptiveChunkSize = useCallback(() => {
-    if (speedSamplesRef.current.length === 0) return CHUNK_SIZE_SLOW;
-    
-    const avgSpeed = speedSamplesRef.current.reduce((a, b) => a + b, 0) / speedSamplesRef.current.length;
-    
-    if (avgSpeed < 500 * 1024) return CHUNK_SIZE_SLOW;      // < 500KB/s
-    if (avgSpeed < 2 * 1024 * 1024) return CHUNK_SIZE_MEDIUM; // < 2MB/s
-    return CHUNK_SIZE_FAST;
-  }, []);
-
-  // Update speed calculation with smoothing
-  const updateSpeedMetrics = useCallback((bytesJustUploaded: number) => {
-    const now = Date.now();
-    const timeDiff = (now - lastProgressTimeRef.current) / 1000;
-    
-    if (timeDiff > 0.5) { // Update every 500ms minimum
-      const bytesDiff = uploadedBytesRef.current - lastProgressBytesRef.current;
-      const instantSpeed = bytesDiff / timeDiff;
-      
-      speedSamplesRef.current.push(instantSpeed);
-      if (speedSamplesRef.current.length > 10) {
-        speedSamplesRef.current.shift();
-      }
-      
-      lastProgressTimeRef.current = now;
-      lastProgressBytesRef.current = uploadedBytesRef.current;
-      
-      return instantSpeed;
-    }
-    
-    return speedSamplesRef.current.length > 0 
-      ? speedSamplesRef.current[speedSamplesRef.current.length - 1] 
-      : 0;
-  }, []);
-
-  // Extract video metadata
   const extractVideoMetadata = useCallback((file: File): Promise<VideoMetadata> => {
     return new Promise((resolve, reject) => {
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      
+      const video = document.createElement("video");
+      video.preload = "metadata";
+
       video.onloadedmetadata = () => {
         video.currentTime = Math.min(1, video.duration * 0.1);
       };
-      
+
       video.onseeked = () => {
-        const canvas = document.createElement('canvas');
+        const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        
-        const ctx = canvas.getContext('2d');
+
+        const ctx = canvas.getContext("2d");
         ctx?.drawImage(video, 0, 0);
-        
-        const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
-        
+
+        const thumbnail = canvas.toDataURL("image/jpeg", 0.8);
+
         resolve({
           duration: Math.round(video.duration),
           width: video.videoWidth,
@@ -134,337 +90,355 @@ export const useVideoUpload = (userId: string) => {
           thumbnail,
           isReel: video.duration <= 90,
         });
-        
+
         URL.revokeObjectURL(video.src);
       };
-      
+
       video.onerror = () => {
         URL.revokeObjectURL(video.src);
-        reject(new Error('Failed to load video metadata'));
+        reject(new Error("Failed to load video metadata"));
       };
-      
+
       video.src = URL.createObjectURL(file);
     });
   }, []);
 
-  // Upload single chunk with real progress tracking
-  const uploadChunkWithProgress = useCallback((
-    chunk: Blob,
-    chunkIndex: number,
-    totalChunks: number,
-    fileName: string,
-    onChunkProgress: (loaded: number) => void
-  ): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
-      if (isCancelledRef.current) {
-        reject(new Error('Upload cancelled'));
-        return;
-      }
-
-      const xhr = new XMLHttpRequest();
-      currentXhrRef.current = xhr;
-      
-      let lastLoaded = 0;
-
-      xhr.upload.addEventListener('progress', (event) => {
-        if (isPausedRef.current || isCancelledRef.current) return;
-        
-        if (event.lengthComputable) {
-          const chunkProgress = event.loaded - lastLoaded;
-          lastLoaded = event.loaded;
-          onChunkProgress(chunkProgress);
-        }
-      });
-
-      xhr.addEventListener('load', () => {
-        currentXhrRef.current = null;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(true);
-        } else {
-          let errorMsg = `Upload failed with status ${xhr.status}`;
-          try {
-            const response = JSON.parse(xhr.responseText);
-            errorMsg = response.message || response.error || errorMsg;
-          } catch (e) {}
-          reject(new Error(errorMsg));
-        }
-      });
-
-      xhr.addEventListener('error', () => {
-        currentXhrRef.current = null;
-        reject(new Error('Network error during upload'));
-      });
-
-      xhr.addEventListener('abort', () => {
-        currentXhrRef.current = null;
-        if (isCancelledRef.current) {
-          reject(new Error('Upload cancelled'));
-        } else {
-          reject(new Error('Upload aborted'));
-        }
-      });
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      
-      // Upload chunk with unique name
-      const chunkFileName = totalChunks > 1 
-        ? `${fileName}_chunk_${chunkIndex.toString().padStart(4, '0')}`
-        : fileName;
-      
-      xhr.open('POST', `${supabaseUrl}/storage/v1/object/media/${chunkFileName}`);
-      xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`);
-      xhr.setRequestHeader('x-upsert', 'true');
-      
-      xhr.send(chunk);
-    });
+  const formatSpeed = useCallback((bytesPerSecond: number) => {
+    if (bytesPerSecond < 1024) return `${Math.round(bytesPerSecond)} B/s`;
+    if (bytesPerSecond < 1024 * 1024) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
   }, []);
 
-  // Main upload function with true chunk-based progress
-  const uploadVideo = useCallback(async (
-    file: File,
-    options?: {
-      quality?: 'auto' | 'hd' | 'sd';
-      onProgress?: (progress: UploadProgress) => void;
+  const formatTimeRemaining = useCallback((seconds: number) => {
+    if (!isFinite(seconds) || seconds <= 0) return "Calculating...";
+    if (seconds < 60) return `${Math.round(seconds)}s remaining`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m remaining`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    return `${hours}h ${mins}m remaining`;
+  }, []);
+
+  const computeSpeedAndEta = useCallback((bytesUploaded: number, totalBytes: number) => {
+    const now = Date.now();
+    const { t: lastT, bytes: lastBytes } = lastSampleRef.current;
+
+    const dt = (now - lastT) / 1000;
+    const dBytes = bytesUploaded - lastBytes;
+
+    // Avoid noisy samples
+    if (dt >= 0.5 && dBytes >= 0) {
+      const inst = dBytes / dt;
+      speedSamplesRef.current.push(inst);
+      if (speedSamplesRef.current.length > 12) speedSamplesRef.current.shift();
+      lastSampleRef.current = { t: now, bytes: bytesUploaded };
     }
-  ): Promise<{ url: string; metadata: VideoMetadata } | null> => {
-    if (!file.type.startsWith('video/')) {
-      toast({
-        title: 'Invalid file',
-        description: 'Please select a video file',
-        variant: 'destructive',
-      });
-      return null;
-    }
 
-    try {
-      // Reset all state
-      setStatus('preparing');
-      isPausedRef.current = false;
-      isCancelledRef.current = false;
-      chunksStateRef.current = [];
-      uploadedBytesRef.current = 0;
-      speedSamplesRef.current = [];
-      lastProgressTimeRef.current = Date.now();
-      lastProgressBytesRef.current = 0;
-      fileRef.current = file;
+    const avg = speedSamplesRef.current.length
+      ? speedSamplesRef.current.reduce((a, b) => a + b, 0) / speedSamplesRef.current.length
+      : 0;
 
-      const totalBytes = file.size;
-      const fileExt = file.name.split('.').pop();
-      const fullFileName = `${userId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-      fileNameRef.current = fullFileName;
+    const remaining = totalBytes - bytesUploaded;
+    const eta = avg > 0 ? remaining / avg : 0;
+    return { speed: avg, eta };
+  }, []);
 
-      // Initialize progress at 0%
-      setProgress({
-        bytesUploaded: 0,
-        totalBytes,
-        percentage: 0,
-        speed: 0,
-        estimatedTimeRemaining: 0,
-        currentChunk: 0,
-        totalChunks: 1,
-      });
+  const getTusEndpoint = useCallback(() => {
+    // Supabase storage resumable endpoint uses the storage subdomain.
+    // Using VITE_SUPABASE_PROJECT_ID keeps this stable across environments.
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    return `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+  }, []);
 
-      // Generate thumbnail
-      setStatus('generating-thumbnail');
-      const metadata = await extractVideoMetadata(file);
-      setVideoMetadata(metadata);
+  const createObjectName = useCallback((file: File) => {
+    const ext = file.name.split(".").pop() || "mp4";
+    return `${userId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  }, [userId]);
 
-      // Calculate chunks based on initial chunk size
-      const initialChunkSize = getAdaptiveChunkSize();
-      const chunks: ChunkState[] = [];
-      let offset = 0;
-      let chunkIndex = 0;
+  /**
+   * NOTE: The previous implementation could freeze at a fixed percentage because it relied on
+   * xhr.upload progress events for cross-origin uploads and sometimes received no progress updates
+   * (lengthComputable=false), so uploadedBytes never advanced.
+   *
+   * This new implementation uses TUS resumable uploads which reports true uploaded bytes.
+   */
+  const uploadVideo = useCallback(
+    async (
+      file: File,
+      options?: {
+        quality?: "auto" | "hd" | "sd";
+        onProgress?: (progress: UploadProgress) => void;
+      }
+    ): Promise<{ url: string; metadata: VideoMetadata } | null> => {
+      if (!file.type.startsWith("video/")) {
+        toast({ title: "Invalid file", description: "Please select a video file", variant: "destructive" });
+        return null;
+      }
 
-      while (offset < totalBytes) {
-        const end = Math.min(offset + initialChunkSize, totalBytes);
-        chunks.push({
-          index: chunkIndex,
-          start: offset,
-          end,
-          uploaded: false,
-          retries: 0,
+      try {
+        setStatus("preparing");
+        fileRef.current = file;
+        pausedByOfflineRef.current = false;
+        speedSamplesRef.current = [];
+        lastSampleRef.current = { t: Date.now(), bytes: 0 };
+
+        // Progress starts at 0% (MANDATORY)
+        const totalBytes = file.size;
+        const totalChunks = Math.max(1, Math.ceil(totalBytes / CHUNK_SIZE_BYTES));
+        setProgress({
+          bytesUploaded: 0,
+          totalBytes,
+          percentage: 0,
+          speed: 0,
+          estimatedTimeRemaining: 0,
+          currentChunk: 0,
+          totalChunks,
         });
-        offset = end;
-        chunkIndex++;
-      }
 
-      chunksStateRef.current = chunks;
-      const totalChunks = chunks.length;
+        setStatus("generating-thumbnail");
+        const metadata = await extractVideoMetadata(file);
+        setVideoMetadata(metadata);
 
-      setProgress(prev => ({
-        ...prev,
-        totalChunks,
-        currentChunk: 0,
-      }));
+        // Backend session token (required for authenticated uploads)
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (!session?.access_token) throw new Error("You must be logged in to upload.");
 
-      setStatus('uploading');
-
-      // Upload chunks sequentially
-      for (let i = 0; i < chunks.length; i++) {
-        if (isCancelledRef.current) {
-          throw new Error('Upload cancelled');
+        // Optionally ask backend for an object key (keeps naming consistent & future-proof)
+        let objectName = "";
+        try {
+          const { data, error } = await supabase.functions.invoke("video-upload-session", {
+            body: { fileName: file.name },
+          });
+          if (error) throw error;
+          objectName = data?.objectName;
+        } catch {
+          // Fallback: client-side object key
+          objectName = createObjectName(file);
         }
 
-        // Wait while paused
-        while (isPausedRef.current && !isCancelledRef.current) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        objectNameRef.current = objectName;
 
-        if (isCancelledRef.current) {
-          throw new Error('Upload cancelled');
-        }
+        setStatus("uploading");
 
-        const chunk = chunks[i];
-        const chunkBlob = file.slice(chunk.start, chunk.end);
-        let success = false;
-        
-        while (!success && chunk.retries < MAX_RETRIES) {
-          try {
-            // Update current chunk
-            setProgress(prev => ({
-              ...prev,
-              currentChunk: i + 1,
-            }));
+        // Start resumable upload
+        uploadRef.current = await startTusUpload({
+          file,
+          endpoint: getTusEndpoint(),
+          headers: {
+            // Required headers for Storage resumable uploads
+            authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            "x-upsert": "true",
+          },
+          chunkSize: CHUNK_SIZE_BYTES,
+          metadata: {
+            bucketName: "media",
+            objectName,
+            contentType: file.type,
+            cacheControl: "3600",
+            // Custom metadata for debugging/analytics (stored by backend)
+            metadata: JSON.stringify({ quality: options?.quality ?? "auto" }),
+          },
+          callbacks: {
+            onProgress: (bytesUploaded, bytesTotal) => {
+              const pctRaw = (bytesUploaded / bytesTotal) * 100;
+              const pct = Math.floor(clamp(pctRaw, 0, 100));
 
-            await uploadChunkWithProgress(
-              chunkBlob,
-              i,
-              totalChunks,
-              fullFileName,
-              (bytesProgress) => {
-                uploadedBytesRef.current += bytesProgress;
-                
-                const percentage = Math.min(
-                  Math.floor((uploadedBytesRef.current / totalBytes) * 100),
-                  99 // Cap at 99% until finalized
-                );
-                
-                const speed = updateSpeedMetrics(bytesProgress);
-                const avgSpeed = speedSamplesRef.current.length > 0
-                  ? speedSamplesRef.current.reduce((a, b) => a + b, 0) / speedSamplesRef.current.length
-                  : speed;
-                
-                const remainingBytes = totalBytes - uploadedBytesRef.current;
-                const estimatedTime = avgSpeed > 0 ? remainingBytes / avgSpeed : 0;
+              const { speed, eta } = computeSpeedAndEta(bytesUploaded, bytesTotal);
 
-                const newProgress: UploadProgress = {
-                  bytesUploaded: uploadedBytesRef.current,
-                  totalBytes,
-                  percentage,
-                  speed: avgSpeed,
-                  estimatedTimeRemaining: estimatedTime,
-                  currentChunk: i + 1,
-                  totalChunks,
-                };
-                
-                setProgress(newProgress);
-                options?.onProgress?.(newProgress);
-              }
-            );
+              const currentChunk = Math.max(1, Math.ceil(bytesUploaded / CHUNK_SIZE_BYTES));
+              const newProgress: UploadProgress = {
+                bytesUploaded,
+                totalBytes: bytesTotal,
 
-            success = true;
-            chunksStateRef.current[i].uploaded = true;
-          } catch (error: any) {
-            if (error.message === 'Upload cancelled') {
-              throw error;
-            }
-            
-            chunk.retries++;
-            chunksStateRef.current[i].retries = chunk.retries;
-            
-            if (chunk.retries >= MAX_RETRIES) {
-              throw new Error(`Chunk ${i + 1} failed after ${MAX_RETRIES} retries`);
-            }
-            
-            // Exponential backoff
-            await new Promise(resolve => 
-              setTimeout(resolve, Math.pow(2, chunk.retries) * 1000)
-            );
-          }
-        }
-      }
+                // Requirement: show 100% ONLY after server confirms success
+                percentage: Math.min(pct, 99),
 
-      // Finalize - if multiple chunks, we'd merge them server-side
-      // For single file upload, just get the URL
-      setStatus('finalizing');
-      
-      const finalFileName = totalChunks > 1 
-        ? `${fullFileName}_chunk_0000` 
-        : fullFileName;
+                speed,
+                estimatedTimeRemaining: eta,
+                currentChunk: Math.min(currentChunk, totalChunks),
+                totalChunks,
+              };
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('media')
-        .getPublicUrl(totalChunks > 1 ? `${fullFileName}_chunk_0000` : fullFileName);
+              setProgress(newProgress);
+              options?.onProgress?.(newProgress);
+            },
+            onSuccess: () => {
+              // Server confirmed final chunk and upload finished
+              setStatus("finalizing");
 
-      // Complete
-      setStatus('complete');
-      setProgress(prev => ({ 
-        ...prev, 
-        percentage: 100, 
-        bytesUploaded: totalBytes,
-        estimatedTimeRemaining: 0,
-      }));
+              const { data: urlData } = supabase.storage.from("media").getPublicUrl(objectName);
 
-      toast({
-        title: 'Upload complete!',
-        description: 'Your video has been uploaded successfully',
-      });
+              setProgress((p) => ({
+                ...p,
+                bytesUploaded: totalBytes,
+                percentage: 100,
+                estimatedTimeRemaining: 0,
+              }));
 
-      return { url: publicUrl, metadata };
-    } catch (error: any) {
-      console.error('Video upload error:', error);
-      
-      if (error.message !== 'Upload cancelled') {
-        setStatus('error');
+              setStatus("complete");
+
+              toast({ title: "Upload complete!", description: "Your video has been uploaded successfully" });
+
+              // Return via refs (we can't return from callback)
+              // The promise below resolves using a one-shot ref.
+              successResolverRef.current?.({ url: urlData.publicUrl, metadata });
+              successResolverRef.current = null;
+            },
+            onError: (error) => {
+              setStatus("error");
+              toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+              errorResolverRef.current?.(error);
+              errorResolverRef.current = null;
+            },
+          },
+        });
+
+        // Convert callback-based completion to a promise so calling code can await.
+        const result = await new Promise<{ url: string; metadata: VideoMetadata }>((resolve, reject) => {
+          successResolverRef.current = resolve;
+          errorResolverRef.current = reject;
+        });
+
+        return result;
+      } catch (error: any) {
+        console.error("Video upload error:", error);
+        if (status !== "paused") setStatus("error");
         toast({
-          title: 'Upload failed',
-          description: error.message || 'Please try again',
-          variant: 'destructive',
+          title: "Upload failed",
+          description: error?.message || "Please try again",
+          variant: "destructive",
         });
+        return null;
       }
-      
-      return null;
-    }
-  }, [userId, extractVideoMetadata, getAdaptiveChunkSize, uploadChunkWithProgress, updateSpeedMetrics, toast]);
+    },
+    [
+      computeSpeedAndEta,
+      createObjectName,
+      extractVideoMetadata,
+      getTusEndpoint,
+      status,
+      toast,
+      userId,
+    ]
+  );
 
-  // Pause upload
+  // Promise resolvers for onSuccess/onError (keeps EnhancedVideoUpload API unchanged)
+  const successResolverRef = useRef<((value: { url: string; metadata: VideoMetadata }) => void) | null>(null);
+  const errorResolverRef = useRef<((err: unknown) => void) | null>(null);
+
   const pauseUpload = useCallback(() => {
-    isPausedRef.current = true;
-    currentXhrRef.current?.abort();
-    setStatus('paused');
-    toast({
-      title: 'Upload paused',
-      description: 'Your upload has been paused',
-    });
+    if (!uploadRef.current) return;
+    uploadRef.current.abort();
+    setStatus("paused");
+    toast({ title: "Upload paused", description: "Your upload has been paused" });
   }, [toast]);
 
-  // Resume upload
   const resumeUpload = useCallback(async () => {
-    if (!fileRef.current || !fileNameRef.current) {
-      toast({
-        title: 'Cannot resume',
-        description: 'No upload to resume',
-        variant: 'destructive',
-      });
+    const file = fileRef.current;
+    if (!file) {
+      toast({ title: "Cannot resume", description: "No upload to resume", variant: "destructive" });
       return;
     }
 
-    isPausedRef.current = false;
-    setStatus('uploading');
-    toast({
-      title: 'Resuming upload',
-      description: 'Your upload is continuing',
-    });
-  }, [toast]);
+    // Restart the tus upload; it will resume automatically from the stored fingerprint.
+    setStatus("uploading");
 
-  // Cancel upload
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("You must be logged in to upload.");
+
+      const objectName = objectNameRef.current || createObjectName(file);
+      objectNameRef.current = objectName;
+
+      uploadRef.current = await startTusUpload({
+        file,
+        endpoint: getTusEndpoint(),
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          "x-upsert": "true",
+        },
+        chunkSize: CHUNK_SIZE_BYTES,
+        metadata: {
+          bucketName: "media",
+          objectName,
+          contentType: file.type,
+          cacheControl: "3600",
+        },
+        callbacks: {
+          onProgress: (bytesUploaded, bytesTotal) => {
+            const pctRaw = (bytesUploaded / bytesTotal) * 100;
+            const pct = Math.floor(clamp(pctRaw, 0, 100));
+            const { speed, eta } = computeSpeedAndEta(bytesUploaded, bytesTotal);
+            const totalChunks = Math.max(1, Math.ceil(bytesTotal / CHUNK_SIZE_BYTES));
+            const currentChunk = Math.max(1, Math.ceil(bytesUploaded / CHUNK_SIZE_BYTES));
+
+            const newProgress: UploadProgress = {
+              bytesUploaded,
+              totalBytes: bytesTotal,
+              percentage: Math.min(pct, 99),
+              speed,
+              estimatedTimeRemaining: eta,
+              currentChunk: Math.min(currentChunk, totalChunks),
+              totalChunks,
+            };
+
+            setProgress(newProgress);
+          },
+          onSuccess: () => {
+            setStatus("finalizing");
+            const { data: urlData } = supabase.storage.from("media").getPublicUrl(objectName);
+
+            setProgress((p) => ({
+              ...p,
+              bytesUploaded: file.size,
+              percentage: 100,
+              estimatedTimeRemaining: 0,
+            }));
+
+            setStatus("complete");
+            toast({ title: "Upload complete!", description: "Your video has been uploaded successfully" });
+
+            // If the original uploadVideo() is awaiting, resolve it.
+            if (videoMetadata) {
+              successResolverRef.current?.({ url: urlData.publicUrl, metadata: videoMetadata });
+              successResolverRef.current = null;
+            }
+          },
+          onError: (err) => {
+            setStatus("error");
+            toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+            errorResolverRef.current?.(err);
+            errorResolverRef.current = null;
+          },
+        },
+      });
+
+      toast({ title: "Resuming upload", description: "Your upload is continuing" });
+    } catch (e: any) {
+      setStatus("error");
+      toast({ title: "Cannot resume", description: e?.message || "Please try again", variant: "destructive" });
+    }
+  }, [computeSpeedAndEta, createObjectName, getTusEndpoint, toast, videoMetadata]);
+
   const cancelUpload = useCallback(() => {
-    isCancelledRef.current = true;
-    isPausedRef.current = false;
-    currentXhrRef.current?.abort();
-    
-    setStatus('idle');
+    // Abort without trying to finalize.
+    uploadRef.current?.abort();
+    uploadRef.current = null;
+
+    fileRef.current = null;
+    objectNameRef.current = "";
+    pausedByOfflineRef.current = false;
+    speedSamplesRef.current = [];
+
+    setStatus("idle");
+    setVideoMetadata(null);
     setProgress({
       bytesUploaded: 0,
       totalBytes: 0,
@@ -474,48 +448,55 @@ export const useVideoUpload = (userId: string) => {
       currentChunk: 0,
       totalChunks: 0,
     });
-    
-    fileRef.current = null;
-    fileNameRef.current = '';
-    chunksStateRef.current = [];
-    uploadedBytesRef.current = 0;
-    speedSamplesRef.current = [];
-    
-    toast({
-      title: 'Upload cancelled',
-      description: 'Your upload has been cancelled',
-    });
+
+    toast({ title: "Upload cancelled", description: "Your upload has been cancelled" });
   }, [toast]);
 
-  // Format helpers
-  const formatSpeed = useCallback((bytesPerSecond: number) => {
-    if (bytesPerSecond < 1024) return `${Math.round(bytesPerSecond)} B/s`;
-    if (bytesPerSecond < 1024 * 1024) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
-    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
-  }, []);
+  // Auto pause/resume on connectivity changes (internet-dependent behavior)
+  useEffect(() => {
+    const onOffline = () => {
+      if (status === "uploading") {
+        pausedByOfflineRef.current = true;
+        pauseUpload();
+      }
+    };
 
-  const formatTimeRemaining = useCallback((seconds: number) => {
-    if (!isFinite(seconds) || seconds <= 0) return 'Calculating...';
-    if (seconds < 60) return `${Math.round(seconds)}s remaining`;
-    if (seconds < 3600) return `${Math.round(seconds / 60)}m remaining`;
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.round((seconds % 3600) / 60);
-    return `${hours}h ${mins}m remaining`;
-  }, []);
+    const onOnline = () => {
+      if (pausedByOfflineRef.current) {
+        pausedByOfflineRef.current = false;
+        resumeUpload();
+      }
+    };
+
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [pauseUpload, resumeUpload, status]);
 
   const getStatusMessage = useCallback(() => {
     switch (status) {
-      case 'preparing': return 'Preparing video...';
-      case 'generating-thumbnail': return 'Generating thumbnail...';
-      case 'uploading': return `Uploading ${progress.percentage}%`;
-      case 'processing': return 'Processing video...';
-      case 'finalizing': return 'Finalizing...';
-      case 'complete': return 'Upload complete ✓';
-      case 'error': return 'Upload failed';
-      case 'paused': return 'Upload paused';
-      default: return '';
+      case "preparing":
+        return "Preparing video...";
+      case "generating-thumbnail":
+        return "Generating thumbnail...";
+      case "uploading":
+        return `Uploading ${progress.percentage}%`;
+      case "finalizing":
+        return "Finalizing...";
+      case "complete":
+        return "Upload complete ✓";
+      case "error":
+        return "Upload failed";
+      case "paused":
+        return "Upload paused";
+      default:
+        return "";
     }
-  }, [status, progress.percentage]);
+  }, [progress.percentage, status]);
 
   return {
     uploadVideo,
@@ -528,9 +509,9 @@ export const useVideoUpload = (userId: string) => {
     getStatusMessage,
     formatSpeed,
     formatTimeRemaining,
-    isUploading: status === 'uploading' || status === 'processing' || status === 'finalizing',
-    isPaused: status === 'paused',
-    isComplete: status === 'complete',
-    isError: status === 'error',
+    isUploading: status === "uploading" || status === "finalizing",
+    isPaused: status === "paused",
+    isComplete: status === "complete",
+    isError: status === "error",
   };
 };
