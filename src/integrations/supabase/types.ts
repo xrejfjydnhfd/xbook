@@ -869,6 +869,63 @@ export type Database = {
           },
         ]
       }
+      upload_queue: {
+        Row: {
+          bytes_uploaded: number | null
+          completed_at: string | null
+          content_hash: string | null
+          created_at: string | null
+          error_message: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id: string
+          object_name: string | null
+          retry_count: number | null
+          status: string
+          tus_upload_url: string | null
+          updated_at: string | null
+          upload_speed: number | null
+          user_id: string
+        }
+        Insert: {
+          bytes_uploaded?: number | null
+          completed_at?: string | null
+          content_hash?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id?: string
+          object_name?: string | null
+          retry_count?: number | null
+          status?: string
+          tus_upload_url?: string | null
+          updated_at?: string | null
+          upload_speed?: number | null
+          user_id: string
+        }
+        Update: {
+          bytes_uploaded?: number | null
+          completed_at?: string | null
+          content_hash?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          object_name?: string | null
+          retry_count?: number | null
+          status?: string
+          tus_upload_url?: string | null
+          updated_at?: string | null
+          upload_speed?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -889,6 +946,69 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      video_processing_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          original_url: string
+          post_id: string | null
+          progress: number | null
+          qualities: Json | null
+          status: string
+          thumbnail_urls: Json | null
+          updated_at: string | null
+          upload_queue_id: string | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          original_url: string
+          post_id?: string | null
+          progress?: number | null
+          qualities?: Json | null
+          status?: string
+          thumbnail_urls?: Json | null
+          updated_at?: string | null
+          upload_queue_id?: string | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          original_url?: string
+          post_id?: string | null
+          progress?: number | null
+          qualities?: Json | null
+          status?: string
+          thumbnail_urls?: Json | null
+          updated_at?: string | null
+          upload_queue_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_processing_jobs_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_processing_jobs_upload_queue_id_fkey"
+            columns: ["upload_queue_id"]
+            isOneToOne: false
+            referencedRelation: "upload_queue"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       video_responses: {
         Row: {

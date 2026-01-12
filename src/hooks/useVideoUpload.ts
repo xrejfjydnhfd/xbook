@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { startTusUpload } from "@/lib/uploads/tusVideoUploader";
+import { uploadQueueManager } from "@/lib/uploads/uploadQueueManager";
 
 export interface UploadProgress {
   bytesUploaded: number;
@@ -31,8 +32,13 @@ export interface VideoMetadata {
   isReel: boolean;
 }
 
-// Requirement: 5MB–10MB chunks
-const CHUNK_SIZE_BYTES = 6 * 1024 * 1024; // 6MB
+// Dynamic chunk sizing based on network quality
+function getAdaptiveChunkSize(): number {
+  return uploadQueueManager.getAdaptiveChunkSize() || 6 * 1024 * 1024;
+}
+
+// Default chunk size (used for calculations)
+const DEFAULT_CHUNK_SIZE = 6 * 1024 * 1024; // 6MB
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -183,7 +189,7 @@ export const useVideoUpload = (userId: string) => {
 
         // Progress starts at 0% (MANDATORY)
         const totalBytes = file.size;
-        const totalChunks = Math.max(1, Math.ceil(totalBytes / CHUNK_SIZE_BYTES));
+        const totalChunks = Math.max(1, Math.ceil(totalBytes / DEFAULT_CHUNK_SIZE));
         setProgress({
           bytesUploaded: 0,
           totalBytes,
@@ -223,7 +229,8 @@ export const useVideoUpload = (userId: string) => {
 
         setStatus("uploading");
 
-        // Start resumable upload
+        // Start resumable upload with adaptive chunk size
+        const adaptiveChunkSize = getAdaptiveChunkSize();
         uploadRef.current = await startTusUpload({
           file,
           endpoint: getTusEndpoint(),
@@ -233,7 +240,7 @@ export const useVideoUpload = (userId: string) => {
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
             "x-upsert": "true",
           },
-          chunkSize: CHUNK_SIZE_BYTES,
+          chunkSize: adaptiveChunkSize,
           metadata: {
             bucketName: "media",
             objectName,
@@ -249,7 +256,7 @@ export const useVideoUpload = (userId: string) => {
 
               const { speed, eta } = computeSpeedAndEta(bytesUploaded, bytesTotal);
 
-              const currentChunk = Math.max(1, Math.ceil(bytesUploaded / CHUNK_SIZE_BYTES));
+              const currentChunk = Math.max(1, Math.ceil(bytesUploaded / DEFAULT_CHUNK_SIZE));
               const newProgress: UploadProgress = {
                 bytesUploaded,
                 totalBytes: bytesTotal,
@@ -364,7 +371,7 @@ export const useVideoUpload = (userId: string) => {
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           "x-upsert": "true",
         },
-        chunkSize: CHUNK_SIZE_BYTES,
+        chunkSize: getAdaptiveChunkSize(),
         metadata: {
           bucketName: "media",
           objectName,
@@ -376,8 +383,8 @@ export const useVideoUpload = (userId: string) => {
             const pctRaw = (bytesUploaded / bytesTotal) * 100;
             const pct = Math.floor(clamp(pctRaw, 0, 100));
             const { speed, eta } = computeSpeedAndEta(bytesUploaded, bytesTotal);
-            const totalChunks = Math.max(1, Math.ceil(bytesTotal / CHUNK_SIZE_BYTES));
-            const currentChunk = Math.max(1, Math.ceil(bytesUploaded / CHUNK_SIZE_BYTES));
+            const totalChunks = Math.max(1, Math.ceil(bytesTotal / DEFAULT_CHUNK_SIZE));
+            const currentChunk = Math.max(1, Math.ceil(bytesUploaded / DEFAULT_CHUNK_SIZE));
 
             const newProgress: UploadProgress = {
               bytesUploaded,
