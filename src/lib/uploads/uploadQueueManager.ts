@@ -34,10 +34,11 @@ export type NetworkQuality = "excellent" | "good" | "moderate" | "poor" | "offli
 
 const STORAGE_KEY = "video_upload_queue";
 const CHUNK_SIZES: Record<NetworkQuality, number> = {
+  // Keep chunk size within 5MB–10MB (as required)
   excellent: 10 * 1024 * 1024, // 10MB
-  good: 6 * 1024 * 1024,       // 6MB
-  moderate: 4 * 1024 * 1024,   // 4MB
-  poor: 2 * 1024 * 1024,       // 2MB
+  good: 8 * 1024 * 1024,       // 8MB
+  moderate: 6 * 1024 * 1024,   // 6MB
+  poor: 5 * 1024 * 1024,       // 5MB
   offline: 0,
 };
 
