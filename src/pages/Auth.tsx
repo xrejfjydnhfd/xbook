@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { PasswordStrengthIndicator, validatePasswordStrength } from "@/components/auth/PasswordStrengthIndicator";
+import xbookLogo from "@/assets/xbook-logo.png";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -62,7 +63,7 @@ const Auth = () => {
 
         toast({
           title: "Account created!",
-          description: "Welcome to the social network.",
+          description: "Welcome to Xbook.",
         });
         navigate("/");
       }
@@ -80,17 +81,29 @@ const Auth = () => {
   const isSignupDisabled = !isLogin && !validatePasswordStrength(password);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 via-accent/10 to-primary/10 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            {isLogin ? "Welcome Back" : "Join Us"}
-          </CardTitle>
-          <CardDescription>
-            {isLogin ? "Sign in to your account" : "Create your account"}
-          </CardDescription>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/20 via-background to-accent/20 p-4">
+      <Card className="w-full max-w-md shadow-2xl border-border/50">
+        <CardHeader className="text-center space-y-4 pb-2">
+          {/* Logo */}
+          <div className="flex justify-center">
+            <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg ring-2 ring-primary/20">
+              <img 
+                src={xbookLogo} 
+                alt="Xbook Logo" 
+                className="w-full h-full object-cover"
+              />
+            </div>
+          </div>
+          <div>
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              {isLogin ? "Welcome Back" : "Join Xbook"}
+            </CardTitle>
+            <CardDescription className="mt-2">
+              {isLogin ? "Sign in to your account" : "Create your account"}
+            </CardDescription>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <form onSubmit={handleAuth} className="space-y-4">
             <Input
               type="email"
@@ -98,6 +111,7 @@ const Auth = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              className="h-12 bg-secondary/50"
             />
             {!isLogin && (
               <>
@@ -107,6 +121,7 @@ const Auth = () => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
+                  className="h-12 bg-secondary/50"
                 />
                 <Input
                   type="text"
@@ -114,6 +129,7 @@ const Auth = () => {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required
+                  className="h-12 bg-secondary/50"
                 />
               </>
             )}
@@ -124,12 +140,13 @@ const Auth = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="h-12 bg-secondary/50"
               />
               {!isLogin && <PasswordStrengthIndicator password={password} />}
             </div>
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-primary to-accent hover:opacity-90"
+              className="w-full h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 text-lg font-semibold"
               disabled={loading || isSignupDisabled}
             >
               {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
@@ -137,7 +154,7 @@ const Auth = () => {
             <Button
               type="button"
               variant="ghost"
-              className="w-full"
+              className="w-full text-muted-foreground hover:text-foreground"
               onClick={() => setIsLogin(!isLogin)}
             >
               {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
